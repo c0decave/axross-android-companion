@@ -51,27 +51,11 @@ jobs:
           persist-credentials: false
       - name: The toolchain (JDK 17, Gradle)
         uses: ./.github/actions/android-toolchain
-      - name: Unit tests
-        run: gradle --no-daemon -p android testDebugUnitTest
-      - name: Debug APK
-        run: gradle --no-daemon -p android assembleDebug
-      - name: Lint (reported, not fatal yet)
-        run: gradle --no-daemon -p android lintDebug
-        continue-on-error: true
-      - name: What is in it, and the merged manifest's rules
-        run: |
-          APK=android/app/build/outputs/apk/debug/app-debug.apk
-          ls -l "$APK"
-          unzip -l "$APK"
-          sha256sum "$APK"
-          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
-          "$AAPT2" dump permissions "$APK" | tee permissions.txt
-          if grep -q -E 'INTERNET|NETWORK_STATE' permissions.txt; then
-            echo "::error::the APK asks for network access"; exit 1
-          fi
-          MERGED=$(find android/app/build/intermediates -path '*debug*' -name AndroidManifest.xml -path '*merged_manifest*' | head -1)
-          test -n "$MERGED" || { echo "::error::no merged manifest found"; exit 1; }
-          python3 -I scripts/ci/check_manifest.py "$MERGED"
+      # (the steps are in scripts/ci/build.sh: tests, APK, lint, the APK's
+      # permissions and merged manifest, and - until it is committed - the
+      # Gradle dependency checksums, also as annotations)
+      - name: Tests, APK, lint, checks of the APK
+        run: bash scripts/ci/build.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: axross-android-companion-debug-apk
@@ -85,16 +69,12 @@ jobs:
             android/app/build/reports/
             android/app/build/test-results/
           if-no-files-found: ignore
-      # Gradle's own dependencies (the Android Gradle Plugin and what it
-      # pulls in, JUnit) are not yet verified by checksum: until
-      # android/gradle/verification-metadata.xml is reviewed and committed,
-      # each run offers the file it would be (docs/ARCHITECTURE.md, "Supply
-      # chain").
-      - name: Gradle's dependency checksums, to review and commit (until they are)
-        if: hashFiles('android/gradle/verification-metadata.xml') == ''
-        run: gradle --no-daemon -p android --write-verification-metadata sha256 assembleDebug testDebugUnitTest
+      # Gradle's own dependencies are verified by checksum once
+      # android/gradle/verification-metadata.xml is committed; until then
+      # build.sh writes the file this build would need (docs/ARCHITECTURE.md,
+      # "Supply chain").
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: hashFiles('android/gradle/verification-metadata.xml') != ''
+        if: always()
         with:
           name: gradle-verification-metadata
           path: android/gradle/verification-metadata.xml

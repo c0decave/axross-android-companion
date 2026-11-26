@@ -31,12 +31,36 @@ say() { printf '%s\n' "smoke: $*"; }
 app_log() { adb logcat -d -s axross-companion:V 2>/dev/null; }
 app_pid() { adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}'; }
 
+# An annotation (readable through the API when logs and artifacts are not).
+annotate() { # level title file-or-text
+    local msg
+    if [ -f "$3" ]; then msg=$(tail -c 30000 "$3"); else msg=$3; fi
+    msg=${msg//'%'/'%25'}
+    msg=${msg//$'\r'/}
+    msg=${msg//$'\n'/'%0A'}
+    echo "::$1 title=$2::$msg"
+}
+
 finish() {
     adb logcat -d > "$OUT/logcat.txt" 2>/dev/null
     app_log > "$OUT/app-log.txt"
     adb forward --remove "tcp:$PORT" >/dev/null 2>&1
     say "the app's own lines:"
     cat "$OUT/app-log.txt"
+    # what the phone side did with the SMS (incoming handler, the SMS role)
+    {
+        echo "API $SDK"
+        if [ "$SDK" -ge 29 ]; then
+            echo "SMS role: $(adb shell cmd role get-role-holders android.app.role.SMS 2>&1 | tr -d '\r')"
+        fi
+        echo "default sms (settings): $(adb shell settings get secure sms_default_application 2>&1 | tr -d '\r')"
+        echo "inbound SMS handler lines: $(grep -c -i 'InboundSmsHandler' "$OUT/logcat.txt")"
+        grep -i -E 'InboundSmsHandler|SmsDispatcher|MmsSmsProvider|SmsProvider' "$OUT/logcat.txt" | grep -v -i 'pdu' | tail -15 | cut -c1-200
+    } > "$OUT/diagnostics.txt" 2>&1
+    annotate notice "app log (API $SDK)" "$OUT/app-log.txt"
+    annotate notice "telephony (API $SDK)" "$OUT/diagnostics.txt"
+    [ -f "$OUT/smoke-client.json" ] && annotate notice "smoke client (API $SDK)" "$OUT/smoke-client.json"
+    return 0
 }
 
 adb wait-for-device

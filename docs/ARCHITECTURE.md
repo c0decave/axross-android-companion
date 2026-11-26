@@ -84,6 +84,17 @@ MMS (version 1), and it reminds the user to give the role back.
 | minSdk | 26 | startForegroundService, notification channels, adaptive icons |
 | JUnit | 4.13.2 | tests only |
 
+## CI
+
+The workflows only set up and call scripts: the build job's work is in
+`scripts/ci/build.sh`, the smoke test's in `scripts/smoke_test.sh`, the
+release's check of the signed APK in `scripts/ci/verify_release.sh`
+(changing those needs no change of `.github/`). They write what matters as
+annotations (lint's findings, the app's log and the telephony side of the
+smoke test, the signer, the APK's checksum, the dependency checksums until
+they are committed), which `gh api repos/OWNER/REPO/check-runs/JOB/annotations`
+reads where logs and artifacts are out of reach.
+
 ## Supply chain
 
 - **Actions**: pinned by commit SHA with a version comment
