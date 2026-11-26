@@ -33,7 +33,16 @@ if [ "$STATUS" -ne 0 ]; then
     echo "::error title=apksigner (exit $STATUS)::$MSG"
     exit 1
 fi
-GOT=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/verify.txt" | head -1)
+# ("Signer #1 certificate SHA-256 digest: ..." from older apksigners, "V3.0
+# Signer: certificate SHA-256 digest: ..." per scheme from newer ones: every
+# such line must name the one certificate)
+DIGESTS=$(sed -n -E 's/^.*[Ss]igner[^:]*:? certificate SHA-256 digest: ([0-9a-f]{64})$/\1/p' "$RUNNER_TEMP/verify.txt" | sort -u)
+SIGNERS=$(sed -n 's/^Number of signers: //p' "$RUNNER_TEMP/verify.txt")
+if [ "$(printf '%s\n' "$DIGESTS" | grep -c .)" -ne 1 ] || [ "${SIGNERS:-1}" != 1 ]; then
+    echo "::error title=apksigner::expected one signer with one certificate, got $SIGNERS signer(s): $(echo $DIGESTS)"
+    exit 1
+fi
+GOT=$DIGESTS
 if [ -z "$GOT" ]; then
     MSG=$(grep -i -E 'signer|digest|verified' "$RUNNER_TEMP/verify.txt" | head -20 | sed ':a;N;$!ba;s/\n/%0A/g')
     echo "::error title=apksigner::no signer digest in its output: $MSG"
