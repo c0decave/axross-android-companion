@@ -9,7 +9,6 @@ import android.telephony.SmsManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import io.github.c0decave.axross.companion.protocol.ErrorCode;
-import io.github.c0decave.axross.companion.protocol.Json;
 import io.github.c0decave.axross.companion.protocol.Protocol;
 import io.github.c0decave.axross.companion.protocol.RateLimiter;
 import io.github.c0decave.axross.companion.protocol.RequestException;
@@ -28,7 +27,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * with a "sent" and (when asked) a "delivered" PendingIntent per part; their
  * results come back through {@link SmsStatusReceiver} and become the
  * sending session's events. The only way the companion sends: from a
- * session's request, never from an intent.
+ * session's request, never from an intent. A send whose client_ref was
+ * accepted within the hour is answered from the tracker and not sent again.
  */
 final class Sender {
     static final String ACTION_SENT = "io.github.c0decave.axross.companion.SMS_SENT";
@@ -62,6 +62,11 @@ final class Sender {
     }
 
     void send(Session.Call call, Requests.SmsSend req) throws RequestException {
+        Map<String, Object> earlier = tracker.duplicate(req.clientRef);
+        if (earlier != null) {
+            answerDuplicate(call, earlier);
+            return;
+        }
         Perms.require(context, "SEND_SMS");
         if (req.subId >= 0) {
             Perms.require(context, "READ_PHONE_STATE");
@@ -85,23 +90,24 @@ final class Sender {
             throw new RequestException(ErrorCode.INTERNAL, "the text could not be divided");
         }
         TextRules.checkParts(parts.size());
-        long wait = limiter.tryAcquire(req.recipients.size());
-        if (wait > 0) {
-            throw new RequestException(ErrorCode.RATE_LIMITED, "too many messages sent in a short time",
-                    Json.obj("retry_after_ms", wait));
-        }
         List<Integer> counts = new ArrayList<>();
-        List<Object> recipients = new ArrayList<>();
         for (int i = 0; i < req.recipients.size(); i++) {
             counts.add(parts.size());
-            recipients.add(Json.obj("index", (long) i, "address", req.recipients.get(i), "parts", (long) parts.size()));
         }
-        long sendId = tracker.start(call.session().number, req.recipients, counts);
+        // (the client_ref looked up again, the rate limit and the
+        // registration in one step: two sends with the same client_ref at
+        // once make one send)
+        Map<String, Object> result = tracker.accept(call.session().number, req.clientRef, req.recipients, counts, limiter);
+        if (SendTracker.isDuplicate(result)) {
+            answerDuplicate(call, result);
+            return;
+        }
+        long sendId = (Long) result.get("send_id");
         if (Perms.isDefaultSmsApp(context)) {
             pending.put(sendId, new Pending(req.recipients, req.text, req.subId));
         }
         // (the answer first: the events follow it)
-        call.ok(Json.obj("send_id", sendId, "recipients", recipients));
+        call.ok(result);
         L.i("session " + call.session().number + ": sending " + req.recipients.size() + " x " + parts.size() + " parts");
         for (int i = 0; i < req.recipients.size(); i++) {
             ArrayList<PendingIntent> sent = new ArrayList<>();
@@ -119,6 +125,12 @@ final class Sender {
                 onSent(sendId, i, false, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
             }
         }
+    }
+
+    /** The first send's result again; its events went to its own session. */
+    private static void answerDuplicate(Session.Call call, Map<String, Object> result) {
+        L.i("session " + call.session().number + ": a send asked for again (known client_ref): not sent again");
+        call.ok(result);
     }
 
     private PendingIntent intent(String action, long sendId, int index, int part, boolean mutable) {

@@ -7,8 +7,8 @@ import java.util.Map;
 
 /** The constants of docs/PROTOCOL.md. */
 public final class Protocol {
-    public static final int VERSION = 1;
-    public static final List<Long> SUPPORTED = Collections.singletonList(1L);
+    public static final int VERSION = 2;
+    public static final List<Long> SUPPORTED = Collections.singletonList(2L);
 
     /** The abstract socket's name (localabstract:axross-companion). */
     public static final String SOCKET_NAME = "axross-companion";
@@ -27,10 +27,11 @@ public final class Protocol {
     public static final int MAX_PAGE = 500;
     public static final int SENDS_PER_MINUTE = 20;
     public static final int SENDS_PER_HOUR = 100;
+    /** From the connection to a successful auth (hello and auth). */
     public static final long HANDSHAKE_TIMEOUT_MS = 10_000;
     public static final long SLOW_READER_MS = 60_000;
 
-    /** What version 1 implements (mms.send is not in it). */
+    /** What this version implements (mms.send is not in it). */
     public static final List<String> CAPABILITIES = Collections.unmodifiableList(Arrays.asList(
             "contacts", "contacts.photo", "threads", "messages", "messages.search",
             "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts",

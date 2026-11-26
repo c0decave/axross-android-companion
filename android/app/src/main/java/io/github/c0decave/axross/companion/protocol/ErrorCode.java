@@ -5,6 +5,8 @@ public final class ErrorCode {
     public static final String BAD_REQUEST = "bad_request";
     public static final String UNKNOWN_METHOD = "unknown_method";
     public static final String HANDSHAKE_REQUIRED = "handshake_required";
+    public static final String UNKNOWN_TOKEN = "unknown_token";
+    public static final String AUTH_FAILED = "auth_failed";
     public static final String UNSUPPORTED_PROTOCOL = "unsupported_protocol";
     public static final String NOT_IMPLEMENTED = "not_implemented";
     public static final String PERMISSION_DENIED = "permission_denied";

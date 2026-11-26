@@ -26,15 +26,25 @@ public final class Requests {
         public final List<Long> protocols;
         public final String client;
         public final String clientVersion;
+        /** 64 lowercase hex characters. */
+        public final String clientNonce;
+        /** 32 lowercase hex characters: names the token the client holds. */
+        public final String tokenId;
 
-        Hello(List<Long> protocols, String client, String clientVersion) {
+        Hello(List<Long> protocols, String client, String clientVersion, String clientNonce, String tokenId) {
             this.protocols = protocols;
             this.client = client;
             this.clientVersion = clientVersion;
+            this.clientNonce = clientNonce;
+            this.tokenId = tokenId;
         }
 
         /** The highest version both speak, or -1. */
         public int choose() {
+            return choose(protocols);
+        }
+
+        static int choose(List<Long> protocols) {
             long best = -1;
             for (Long p : protocols) {
                 if (Protocol.SUPPORTED.contains(p) && p > best) {
@@ -42,6 +52,15 @@ public final class Requests {
                 }
             }
             return (int) best;
+        }
+    }
+
+    /** auth: the client's proof (64 lowercase hex characters). */
+    public static final class Auth {
+        public final String proof;
+
+        Auth(String proof) {
+            this.proof = proof;
         }
     }
 
@@ -134,12 +153,26 @@ public final class Requests {
         /** -1: the default subscription for SMS. */
         public final int subId;
         public final boolean deliveryReport;
+        /** The client's name for this send (1..64 of A-Z a-z 0-9 _ -), or null. */
+        public final String clientRef;
 
-        SmsSend(List<String> recipients, String text, int subId, boolean deliveryReport) {
+        SmsSend(List<String> recipients, String text, int subId, boolean deliveryReport, String clientRef) {
             this.recipients = recipients;
             this.text = text;
             this.subId = subId;
             this.deliveryReport = deliveryReport;
+            this.clientRef = clientRef;
+        }
+    }
+
+    /** sms.status: by send_id or (null) by client_ref. */
+    public static final class SendQuery {
+        public final long sendId;
+        public final String clientRef;
+
+        SendQuery(long sendId, String clientRef) {
+            this.sendId = sendId;
+            this.clientRef = clientRef;
         }
     }
 
@@ -231,6 +264,8 @@ public final class Requests {
         switch (method) {
             case "hello":
                 return hello(p);
+            case "auth":
+                return new Auth(hex(p, "proof", Tokens.TOKEN_CHARS));
             case "ping":
             case "status":
             case "subscriptions.list":
@@ -255,13 +290,13 @@ public final class Requests {
             case "sms.send":
                 return smsSend(p);
             case "sms.status":
-                return p.reqId("send_id");
+                return sendQuery(p);
             case "mms.parts":
                 return p.reqId("id");
             case "mms.part_data":
                 return p.reqId("part_id");
             case "mms.send":
-                throw new RequestException(ErrorCode.NOT_IMPLEMENTED, "mms.send is not in protocol version 1");
+                throw new RequestException(ErrorCode.NOT_IMPLEMENTED, "mms.send is not in this protocol version");
             case "subscribe":
                 return events(p, true);
             case "unsubscribe":
@@ -282,13 +317,61 @@ public final class Requests {
         }
     }
 
+    /**
+     * hello: the versions first - a client without a common one (an older
+     * axross) is told unsupported_protocol, whatever else it sent - then
+     * client_nonce and token_id, which version 2 requires.
+     */
     private static Hello hello(Params p) throws RequestException {
         List<Object> raw = p.reqList("protocols", 1, 16);
         List<Long> protocols = new ArrayList<>();
         for (Object o : raw) {
             protocols.add(Params.toLong("protocols", o, 1, 1_000_000));
         }
-        return new Hello(protocols, p.optString("client", 0, 64), p.optString("client_version", 0, 64));
+        String client = p.optString("client", 0, 64);
+        String clientVersion = p.optString("client_version", 0, 64);
+        if (Hello.choose(protocols) < 0) {
+            throw new RequestException(ErrorCode.UNSUPPORTED_PROTOCOL, "no common protocol version",
+                    Json.obj("supported", new ArrayList<Object>(Protocol.SUPPORTED)));
+        }
+        return new Hello(protocols, client, clientVersion,
+                hex(p, "client_nonce", 64), hex(p, "token_id", Tokens.ID_CHARS));
+    }
+
+    /** A required string of exactly {@code length} lowercase hex characters. */
+    private static String hex(Params p, String name, int length) throws RequestException {
+        String s = p.reqString(name, length, length);
+        if (!Tokens.isHex(s, length)) {
+            throw RequestException.bad(name, name + " must be " + length + " lowercase hex characters");
+        }
+        return s;
+    }
+
+    /** client_ref: 1..64 characters of A-Z, a-z, 0-9, _ and -; null when absent. */
+    private static String clientRef(Params p) throws RequestException {
+        String s = p.optString("client_ref", 1, 64);
+        if (s == null) {
+            return null;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '_' && c != '-') {
+                throw RequestException.bad("client_ref", "client_ref may hold only A-Z, a-z, 0-9, _ and -");
+            }
+        }
+        return s;
+    }
+
+    private static SendQuery sendQuery(Params p) throws RequestException {
+        boolean byId = p.has("send_id");
+        boolean byRef = p.has("client_ref");
+        if (byId && byRef) {
+            throw RequestException.bad("client_ref", "give either send_id or client_ref");
+        }
+        if (byRef) {
+            return new SendQuery(0, clientRef(p));
+        }
+        return new SendQuery(p.reqId("send_id"), null);
     }
 
     private static String searchQuery(Params p) throws RequestException {
@@ -328,7 +411,7 @@ public final class Requests {
         List<String> recipients = Recipients.parse(p);
         String text = TextRules.check(p);
         int subId = (int) p.optLong("sub_id", -1, -1, Integer.MAX_VALUE);
-        return new SmsSend(recipients, text, subId, p.optBool("delivery_report", true));
+        return new SmsSend(recipients, text, subId, p.optBool("delivery_report", true), clientRef(p));
     }
 
     private static Events events(Params p, boolean required) throws RequestException {

@@ -1,6 +1,7 @@
 package io.github.c0decave.axross.companion.protocol;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,7 +10,9 @@ import java.util.Map;
 /**
  * What became of each send (docs/PROTOCOL.md, "sms.send" and
  * "sms.status"): counts the parts' "sent" and "delivered" callbacks per
- * recipient and says which event is due. Kept for an hour.
+ * recipient and says which event is due; knows the sends by their
+ * client_ref, so that a send asked for again is answered, not sent again.
+ * Kept for an hour (and while the service runs).
  */
 public final class SendTracker {
     public static final long KEEP_MS = 3_600_000L;
@@ -72,11 +75,14 @@ public final class SendTracker {
     static final class Send {
         final long sessionId;
         final long createdMs;
+        /** Or null. */
+        final String clientRef;
         final List<Recipient> recipients = new ArrayList<>();
 
-        Send(long sessionId, long createdMs) {
+        Send(long sessionId, long createdMs, String clientRef) {
             this.sessionId = sessionId;
             this.createdMs = createdMs;
+            this.clientRef = clientRef;
         }
     }
 
@@ -95,22 +101,79 @@ public final class SendTracker {
 
     private final RateLimiter.Clock clock;
     private final Map<Long, Send> sends = new LinkedHashMap<>();
+    /** client_ref -> send id, for the sends in {@link #sends}. */
+    private final Map<String, Long> refs = new HashMap<>();
     private long nextId = 1;
 
     public SendTracker(RateLimiter.Clock clock) {
         this.clock = clock;
     }
 
+    /**
+     * sms.send once its checks have passed: a client_ref seen within the
+     * hour gives that send's result again, with "duplicate": true, and
+     * takes nothing from the rate limit; else the limiter must allow the
+     * messages and the send is registered.
+     *
+     * @return sms.send's result; send it (with "duplicate": false) or not
+     *     (true)
+     * @throws RequestException rate_limited
+     */
+    public synchronized Map<String, Object> accept(long sessionId, String clientRef, List<String> addresses,
+            List<Integer> parts, RateLimiter limiter) throws RequestException {
+        Map<String, Object> earlier = duplicate(clientRef);
+        if (earlier != null) {
+            return earlier;
+        }
+        long wait = limiter.tryAcquire(addresses.size());
+        if (wait > 0) {
+            throw new RequestException(ErrorCode.RATE_LIMITED, "too many messages sent in a short time",
+                    Json.obj("retry_after_ms", wait));
+        }
+        return result(start(sessionId, clientRef, addresses, parts), false);
+    }
+
+    /** True for a result of {@link #accept} that is a duplicate (nothing to send). */
+    public static boolean isDuplicate(Map<String, Object> result) {
+        return Boolean.TRUE.equals(result.get("duplicate"));
+    }
+
+    /** The result of the send with this client_ref ("duplicate": true), or null. */
+    public synchronized Map<String, Object> duplicate(String clientRef) {
+        expire();
+        Long id = clientRef == null ? null : refs.get(clientRef);
+        return id == null ? null : result(id, true);
+    }
+
     /** Registers a send; returns its id. */
-    public synchronized long start(long sessionId, List<String> addresses, List<Integer> parts) {
+    public synchronized long start(long sessionId, String clientRef, List<String> addresses, List<Integer> parts) {
         expire();
         long id = nextId++;
-        Send s = new Send(sessionId, clock.nowMs());
+        Send s = new Send(sessionId, clock.nowMs(), clientRef);
         for (int i = 0; i < addresses.size(); i++) {
             s.recipients.add(new Recipient(addresses.get(i), parts.get(i)));
         }
         sends.put(id, s);
+        if (clientRef != null) {
+            refs.put(clientRef, id);
+        }
         return id;
+    }
+
+    /** sms.send's result for a registered send. */
+    private Map<String, Object> result(long sendId, boolean duplicate) {
+        Send s = sends.get(sendId);
+        List<Object> list = new ArrayList<>();
+        for (int i = 0; i < s.recipients.size(); i++) {
+            Recipient r = s.recipients.get(i);
+            list.add(Json.obj("index", (long) i, "address", r.address, "parts", (long) r.parts));
+        }
+        Map<String, Object> out = Json.obj("send_id", sendId, "recipients", list);
+        if (s.clientRef != null) {
+            out.put("client_ref", s.clientRef);
+        }
+        out.put("duplicate", duplicate);
+        return out;
     }
 
     /** A part's "sent" callback. Returns the event that is due, or null. */
@@ -175,7 +238,18 @@ public final class SendTracker {
             Recipient r = s.recipients.get(i);
             list.add(Json.obj("index", (long) i, "address", r.address, "state", r.state, "reason", r.reason));
         }
-        return Json.obj("send_id", sendId, "recipients", list);
+        Map<String, Object> out = Json.obj("send_id", sendId, "recipients", list);
+        if (s.clientRef != null) {
+            out.put("client_ref", s.clientRef);
+        }
+        return out;
+    }
+
+    /** sms.status by client_ref; null when no send had it (within the hour). */
+    public synchronized Map<String, Object> status(String clientRef) {
+        expire();
+        Long id = refs.get(clientRef);
+        return id == null ? null : status(id);
     }
 
     private Recipient recipient(long sendId, int index) {
@@ -189,8 +263,12 @@ public final class SendTracker {
     private void expire() {
         long now = clock.nowMs();
         for (Iterator<Send> it = sends.values().iterator(); it.hasNext(); ) {
-            if (it.next().createdMs < now - KEEP_MS) {
+            Send s = it.next();
+            if (s.createdMs < now - KEEP_MS) {
                 it.remove();
+                if (s.clientRef != null) {
+                    refs.remove(s.clientRef);
+                }
             }
         }
     }

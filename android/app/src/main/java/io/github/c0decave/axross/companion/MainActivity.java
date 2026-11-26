@@ -16,7 +16,8 @@ import io.github.c0decave.axross.companion.protocol.Protocol;
  * The one screen: what the app is, the permissions and their state (with a
  * button to ask for the missing ones), whether it is the default SMS app,
  * whether the service listens. {@code --ez listen true} (from axross over
- * ADB) also starts the service.
+ * ADB) also starts the service, and hands it {@code --es token <64 hex>}
+ * when given.
  */
 public final class MainActivity extends Activity {
     static final String EXTRA_LISTEN = "listen";
@@ -69,7 +70,7 @@ public final class MainActivity extends Activity {
         Button listen = new Button(this);
         listen.setText(R.string.listen);
         listen.setOnClickListener(v -> {
-            startListening();
+            startListening(null);
             state.postDelayed(this::refresh, 500);
         });
         box.addView(listen);
@@ -84,22 +85,40 @@ public final class MainActivity extends Activity {
         scroll.addView(box);
         setContentView(scroll);
 
-        if (getIntent().getBooleanExtra(EXTRA_LISTEN, false)) {
-            startListening();
-        }
+        onListenIntent(getIntent());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (intent.getBooleanExtra(EXTRA_LISTEN, false)) {
-            startListening();
+        onListenIntent(intent);
+    }
+
+    /** {@code --ez listen true [--es token <64 hex>]}: the token goes to the service. */
+    private void onListenIntent(Intent intent) {
+        boolean listen;
+        String token;
+        try {
+            listen = intent.getBooleanExtra(EXTRA_LISTEN, false);
+            token = intent.getStringExtra(CompanionService.EXTRA_TOKEN);
+        } catch (RuntimeException e) {
+            // (extras that do not unparcel)
+            return;
+        }
+        // (not kept with the activity's intent)
+        intent.removeExtra(CompanionService.EXTRA_TOKEN);
+        if (listen) {
+            startListening(token);
         }
     }
 
-    private void startListening() {
+    private void startListening(String token) {
+        Intent start = new Intent(this, CompanionService.class);
+        if (token != null) {
+            start.putExtra(CompanionService.EXTRA_TOKEN, token);
+        }
         try {
-            startForegroundService(new Intent(this, CompanionService.class));
+            startForegroundService(start);
         } catch (RuntimeException e) {
             L.w("the service could not be started", e);
         }

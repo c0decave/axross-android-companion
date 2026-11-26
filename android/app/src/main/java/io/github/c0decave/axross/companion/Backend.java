@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
  * The phone's side of the protocol: what each request does once
@@ -76,7 +75,7 @@ final class Backend implements Session.Handler {
     /** An event for every session subscribed to it. */
     void broadcast(String event, Map<String, Object> data) {
         for (Session s : service.sessions()) {
-            if (s.helloDone() && s.subscribedTo(event)) {
+            if (s.authenticated() && s.subscribedTo(event)) {
                 s.event(event, data);
             }
         }
@@ -94,8 +93,6 @@ final class Backend implements Session.Handler {
     @Override
     public Map<String, Object> hello(Session session, Requests.Hello hello) {
         L.i("session " + session.number + ": hello from a client");
-        // (the notification names the client once hello is done)
-        timers().schedule(service::updateNotification, 200, TimeUnit.MILLISECONDS);
         return Json.obj(
                 "app", Protocol.APP,
                 "app_version", BuildConfig.VERSION_NAME,
@@ -107,6 +104,12 @@ final class Backend implements Session.Handler {
                 "limits", Protocol.limits(),
                 "default_sms_app", Perms.isDefaultSmsApp(service),
                 "permissions", Perms.state(service));
+    }
+
+    /** The notification names the client once it has proved itself. */
+    @Override
+    public void authenticated(Session session) {
+        timers().execute(service::updateNotification);
     }
 
     @Override
@@ -174,7 +177,8 @@ final class Backend implements Session.Handler {
                 sender.send(call, (Requests.SmsSend) v);
                 return;
             case "sms.status": {
-                Map<String, Object> st = sender.tracker.status((Long) v);
+                Requests.SendQuery q = (Requests.SendQuery) v;
+                Map<String, Object> st = q.clientRef != null ? sender.tracker.status(q.clientRef) : sender.tracker.status(q.sendId);
                 if (st == null) {
                     throw new RequestException(ErrorCode.NOT_FOUND, "no such send (or older than an hour)");
                 }

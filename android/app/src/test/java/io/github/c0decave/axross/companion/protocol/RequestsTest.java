@@ -61,10 +61,36 @@ public class RequestsTest {
 
     @Test
     public void helloChoosesTheHighestCommonVersion() throws Exception {
-        Requests.Hello h = (Requests.Hello) Requests.parse("hello", new Params(Json.obj("protocols", Arrays.asList(5L, 1L, 2L))));
-        assertEquals(1, h.choose());
-        h = (Requests.Hello) Requests.parse("hello", new Params(Json.obj("protocols", Arrays.asList(2L))));
-        assertEquals(-1, h.choose());
+        Requests.Hello h = (Requests.Hello) Requests.parse("hello", new Params(Json.obj("protocols", Arrays.asList(5L, 1L, 2L),
+                "client_nonce", Wire.CLIENT_NONCE, "token_id", Tokens.id(Wire.TOKEN))));
+        assertEquals(2, h.choose());
+        assertEquals(Wire.CLIENT_NONCE, h.clientNonce);
+        assertEquals(Tokens.id(Wire.TOKEN), h.tokenId);
+        // (a version-1 client hears of the version before anything else)
+        try {
+            Requests.parse("hello", new Params(Json.obj("protocols", Arrays.asList(1L))));
+            fail("version 1");
+        } catch (RequestException e) {
+            assertEquals(ErrorCode.UNSUPPORTED_PROTOCOL, e.code);
+            assertEquals(Arrays.asList(2L), e.data.get("supported"));
+        }
+    }
+
+    @Test
+    public void clientRefAndStatus() throws Exception {
+        Requests.SmsSend s = (Requests.SmsSend) Requests.parse("sms.send", new Params(Json.obj(
+                "recipients", Arrays.asList("+15555215554"), "text", "Hi", "client_ref", "0b6f-4C1d_x")));
+        assertEquals("0b6f-4C1d_x", s.clientRef);
+        s = (Requests.SmsSend) Requests.parse("sms.send", new Params(Json.obj(
+                "recipients", Arrays.asList("+15555215554"), "text", "Hi")));
+        assertNull(s.clientRef);
+        Requests.SendQuery q = (Requests.SendQuery) Requests.parse("sms.status", new Params(Json.obj("client_ref", "r1")));
+        assertEquals("r1", q.clientRef);
+        q = (Requests.SendQuery) Requests.parse("sms.status", new Params(Json.obj("send_id", 3L)));
+        assertNull(q.clientRef);
+        assertEquals(3L, q.sendId);
+        Requests.Auth a = (Requests.Auth) Requests.parse("auth", new Params(Json.obj("proof", Wire.TOKEN)));
+        assertEquals(Wire.TOKEN, a.proof);
     }
 
     @Test

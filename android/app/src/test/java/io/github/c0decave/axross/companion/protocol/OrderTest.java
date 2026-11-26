@@ -75,7 +75,7 @@ public class OrderTest {
                 return 1000;
             }
         });
-        long id = t.start(7, Arrays.asList("+1555", "+1666"), Arrays.asList(2, 1));
+        long id = t.start(7, null, Arrays.asList("+1555", "+1666"), Arrays.asList(2, 1));
         assertNull(t.onSent(id, 0, true, -1));
         SendTracker.Event e = t.onSent(id, 0, true, -1);
         assertEquals("sms.sent", e.name);

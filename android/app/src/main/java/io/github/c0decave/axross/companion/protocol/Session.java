@@ -18,13 +18,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * One client's connection, after the peer check: the handshake, the
- * requests and their answers, the events, the blobs - everything of
- * docs/PROTOCOL.md that does not touch the phone's data. Plain Java: the
+ * One client's connection, after the peer check: the handshake (hello and
+ * auth), the requests and their answers, the events, the blobs - everything
+ * of docs/PROTOCOL.md that does not touch the phone's data. Plain Java: the
  * service gives it a socket's streams, the tests a pair of pipes.
  *
  * <p>Threads: {@link #run} reads (the caller's thread); requests other than
- * hello, ping, subscribe and unsubscribe run on the executor; one writer
+ * hello, auth, ping, subscribe and unsubscribe run on the executor; one writer
  * thread writes, from a queue - so that a client that does not read stalls
  * nobody but itself, and is dropped after {@link Protocol#SLOW_READER_MS}.
  */
@@ -41,8 +41,15 @@ public final class Session {
 
     /** What the session cannot do by itself. */
     public interface Handler {
-        /** hello's result (without "protocol", which the session adds). */
+        /**
+         * hello's result (without "protocol" and "auth", which the session
+         * adds). Called once the client's token is known.
+         */
         Map<String, Object> hello(Session session, Requests.Hello hello);
+
+        /** The client has proved that it holds the token: requests follow. */
+        default void authenticated(Session session) {
+        }
 
         /**
          * Answers one request (on an executor thread). It must answer
@@ -132,6 +139,7 @@ public final class Session {
     public final int peerUid;
 
     private final Transport transport;
+    private final Tokens tokens;
     private final Handler handler;
     private final Executor executor;
     private final ScheduledExecutorService timers;
@@ -144,15 +152,20 @@ public final class Session {
 
     private int inFlight;
     private volatile boolean helloDone;
+    private volatile boolean authenticated;
+    /** After hello: the proof auth must bring (never logged). */
+    private String expectedProof;
     private volatile boolean closed;
     private volatile String clientName = "";
     private volatile String clientVersion = "";
     private ScheduledFuture<?> handshakeTimer;
 
-    public Session(Transport transport, int peerUid, Handler handler, Executor executor,
+    /** {@code tokens}: the tokens the shell gave the service (hello looks the client's up). */
+    public Session(Transport transport, int peerUid, Tokens tokens, Handler handler, Executor executor,
             ScheduledExecutorService timers, Log log) {
         this.transport = transport;
         this.peerUid = peerUid;
+        this.tokens = tokens;
         this.handler = handler;
         this.executor = executor;
         this.timers = timers;
@@ -165,6 +178,11 @@ public final class Session {
 
     public boolean helloDone() {
         return helloDone;
+    }
+
+    /** hello and auth are done: the client holds the token. */
+    public boolean authenticated() {
+        return authenticated;
     }
 
     public String clientName() {
@@ -209,7 +227,7 @@ public final class Session {
             handshakeTimer = timers.schedule(new Runnable() {
                 @Override
                 public void run() {
-                    if (!helloDone) {
+                    if (!authenticated) {
                         close("handshake_timeout", true);
                     }
                 }
@@ -269,17 +287,27 @@ public final class Session {
         }
         Params params = new Params(rawParams instanceof Map ? (Map<String, Object>) rawParams : null);
 
-        if (!helloDone) {
-            if (!"hello".equals(method)) {
-                reply(id, new RequestException(ErrorCode.HANDSHAKE_REQUIRED, "the first request must be hello"));
-                close(null, false);
-                return;
+        if ("hello".equals(method)) {
+            if (helloDone) {
+                reply(id, RequestException.bad("method", "hello was already done"));
+            } else {
+                onHello(id, params);
             }
-            onHello(id, params);
             return;
         }
-        if ("hello".equals(method)) {
-            reply(id, RequestException.bad("method", "hello was already done"));
+        if ("auth".equals(method)) {
+            if (!helloDone) {
+                reply(id, RequestException.bad("method", "auth comes after hello"));
+            } else if (authenticated) {
+                reply(id, RequestException.bad("method", "auth was already done"));
+            } else {
+                onAuth(id, params);
+            }
+            return;
+        }
+        if (!authenticated) {
+            reply(id, new RequestException(ErrorCode.HANDSHAKE_REQUIRED, "hello and auth come first"));
+            close(null, false);
             return;
         }
         Object value;
@@ -346,31 +374,77 @@ public final class Session {
         }
     }
 
+    /**
+     * hello: the version, then the token the client names. The result
+     * proves that the companion holds it; auth must prove the same of the
+     * client (docs/PROTOCOL.md, section 4).
+     */
     private void onHello(long id, Params params) {
         Requests.Hello hello;
         try {
             hello = (Requests.Hello) Requests.parse("hello", params);
         } catch (RequestException e) {
             reply(id, e);
+            if (ErrorCode.UNSUPPORTED_PROTOCOL.equals(e.code)) {
+                log.info("session " + number + ": hello -> " + e.code);
+                close(null, false);
+            }
             return;
         }
         int version = hello.choose();
-        if (version < 0) {
-            reply(id, new RequestException(ErrorCode.UNSUPPORTED_PROTOCOL, "no common protocol version",
-                    Json.obj("supported", new ArrayList<Object>(Protocol.SUPPORTED))));
+        String token = tokens.byId(hello.tokenId);
+        if (token == null) {
+            log.info("session " + number + ": hello -> " + ErrorCode.UNKNOWN_TOKEN);
+            reply(id, new RequestException(ErrorCode.UNKNOWN_TOKEN, "the companion was not given that token"));
             close(null, false);
             return;
         }
         clientName = hello.client == null ? "" : hello.client;
         clientVersion = hello.clientVersion == null ? "" : hello.clientVersion;
+        String companionNonce = Tokens.nonce();
         Map<String, Object> result = Json.obj("protocol", (long) version);
         result.putAll(handler.hello(this, hello));
+        result.put("auth", Json.obj("companion_nonce", companionNonce,
+                "proof", Tokens.companionProof(token, hello.clientNonce, companionNonce)));
+        synchronized (lock) {
+            expectedProof = Tokens.clientProof(token, companionNonce, hello.clientNonce);
+        }
         helloDone = true;
+        reply(id, result);
+        log.info("session " + number + ": hello done (protocol " + version + ")");
+    }
+
+    /** auth: the client's proof; a wrong one closes the session. */
+    private void onAuth(long id, Params params) {
+        Requests.Auth auth;
+        try {
+            auth = (Requests.Auth) Requests.parse("auth", params);
+        } catch (RequestException e) {
+            reply(id, e);
+            return;
+        }
+        String expected;
+        synchronized (lock) {
+            expected = expectedProof;
+            expectedProof = null;
+        }
+        if (!Tokens.same(expected, auth.proof)) {
+            log.warn("session " + number + ": auth -> " + ErrorCode.AUTH_FAILED);
+            reply(id, new RequestException(ErrorCode.AUTH_FAILED, "the proof is wrong"));
+            close(null, false);
+            return;
+        }
+        authenticated = true;
         if (handshakeTimer != null) {
             handshakeTimer.cancel(false);
         }
-        reply(id, result);
-        log.info("session " + number + ": hello done (protocol " + version + ")");
+        reply(id, Json.obj());
+        log.info("session " + number + ": authenticated");
+        try {
+            handler.authenticated(this);
+        } catch (RuntimeException e) {
+            log.warn("session " + number + ": authenticated handler failed");
+        }
     }
 
     private void reply(long id, Map<String, Object> result) {

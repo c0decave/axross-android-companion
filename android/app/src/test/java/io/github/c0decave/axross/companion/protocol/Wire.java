@@ -29,6 +29,11 @@ final class Wire implements AutoCloseable {
         }
     };
 
+    /** The token the tests' service was given, and the client's fixed nonce. */
+    static final String TOKEN = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+    static final String CLIENT_NONCE = "a1a2a3a4a5a6a7a8a9b0b1b2b3b4b5b6b7b8b9c0c1c2c3c4c5c6c7c8c9d0d1d2";
+
+    final Tokens tokens = new Tokens();
     final Socket client;
     final Socket server;
     final InputStream in;
@@ -38,11 +43,19 @@ final class Wire implements AutoCloseable {
     Thread reader;
 
     Wire() throws IOException {
+        this(TOKEN);
+    }
+
+    /** {@code token}: the one token the service was given (null: none). */
+    Wire(String token) throws IOException {
         try (ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             client = new Socket(InetAddress.getLoopbackAddress(), listener.getLocalPort());
             server = listener.accept();
         }
         client.setSoTimeout(15_000);
+        if (token != null) {
+            tokens.add(token);
+        }
         in = client.getInputStream();
         out = client.getOutputStream();
     }
@@ -67,7 +80,7 @@ final class Wire implements AutoCloseable {
                     // (closed)
                 }
             }
-        }, Protocol.UID_SHELL, handler, pool, pool, QUIET);
+        }, Protocol.UID_SHELL, tokens, handler, pool, pool, QUIET);
         reader = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -120,8 +133,32 @@ final class Wire implements AutoCloseable {
         pool.shutdownNow();
     }
 
+    /** A version-2 hello with the test token's id. */
     static Map<String, Object> hello() {
-        return Json.obj("id", 1L, "method", "hello", "params", Json.obj("protocols", java.util.Arrays.asList(1L)));
+        return Json.obj("id", 1L, "method", "hello", "params", Json.obj("protocols", java.util.Arrays.asList(2L),
+                "client_nonce", CLIENT_NONCE, "token_id", Tokens.id(TOKEN)));
+    }
+
+    /**
+     * hello (its proof checked) and auth, as ids 1 and 2.
+     *
+     * @return hello's result
+     */
+    @SuppressWarnings("unchecked")
+    Map<String, Object> handshake() throws Exception {
+        send(hello());
+        Map<String, Object> r = nextJson();
+        assertEquals(Json.write(r), true, r.get("ok"));
+        Map<String, Object> result = (Map<String, Object>) r.get("result");
+        Map<String, Object> auth = (Map<String, Object>) result.get("auth");
+        String companionNonce = (String) auth.get("companion_nonce");
+        assertEquals(Tokens.companionProof(TOKEN, CLIENT_NONCE, companionNonce), auth.get("proof"));
+        send(Json.obj("id", 2L, "method", "auth", "params",
+                Json.obj("proof", Tokens.clientProof(TOKEN, companionNonce, CLIENT_NONCE))));
+        r = nextJson();
+        assertEquals(Json.write(r), true, r.get("ok"));
+        assertEquals(2L, r.get("id"));
+        return result;
     }
 
     static File protocolDir() {

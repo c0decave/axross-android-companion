@@ -2,9 +2,11 @@ package io.github.c0decave.axross.companion.protocol;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -60,8 +62,18 @@ public class SessionTest {
         return (String) ((Map<String, Object>) response.get("error")).get("code");
     }
 
+    private static Map<String, Object> auth(long id, String proof) {
+        return req(id, "auth", Json.obj("proof", proof));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String companionNonce(Map<String, Object> helloResponse) {
+        Map<String, Object> result = (Map<String, Object>) helloResponse.get("result");
+        return (String) ((Map<String, Object>) result.get("auth")).get("companion_nonce");
+    }
+
     @Test
-    public void helloThenRequests() throws Exception {
+    public void helloAuthThenRequests() throws Exception {
         try (Wire w = new Wire()) {
             Echo h = new Echo();
             w.start(h);
@@ -70,14 +82,140 @@ public class SessionTest {
             assertEquals(1L, r.get("id"));
             assertEquals(true, r.get("ok"));
             Map<?, ?> result = (Map<?, ?>) r.get("result");
-            assertEquals(1L, result.get("protocol"));
+            assertEquals(2L, result.get("protocol"));
             assertEquals(Protocol.APP, result.get("app"));
+            String nonce = companionNonce(r);
+            assertTrue(Tokens.isHex(nonce, 64));
+            assertEquals(Tokens.companionProof(Wire.TOKEN, Wire.CLIENT_NONCE, nonce), ((Map<?, ?>) result.get("auth")).get("proof"));
+            assertTrue(w.session.helloDone());
+            assertFalse(w.session.authenticated());
 
-            w.send(req(2, "threads.list", Json.obj()));
+            w.send(auth(2, Tokens.clientProof(Wire.TOKEN, nonce, Wire.CLIENT_NONCE)));
             r = w.nextJson();
             assertEquals(2L, r.get("id"));
+            assertEquals(true, r.get("ok"));
+            assertEquals(Json.obj(), r.get("result"));
+            assertTrue(w.session.authenticated());
+
+            w.send(req(3, "threads.list", Json.obj()));
+            r = w.nextJson();
+            assertEquals(3L, r.get("id"));
             assertEquals("threads.list", ((Map<?, ?>) r.get("result")).get("method"));
-            assertTrue(w.session.helloDone());
+        }
+    }
+
+    @Test
+    public void unknownTokenCloses() throws Exception {
+        try (Wire w = new Wire()) {
+            Echo h = new Echo();
+            w.start(h);
+            w.send(req(1, "hello", Json.obj("protocols", Arrays.asList(2L), "client_nonce", Wire.CLIENT_NONCE,
+                    "token_id", Tokens.id("ff112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"))));
+            Map<String, Object> r = w.nextJson();
+            assertEquals("unknown_token", code(r));
+            assertFalse(((Map<?, ?>) r.get("error")).containsKey("data"));
+            assertTrue(w.closedByCompanion());
+            assertTrue(h.closed.await(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    public void wrongProofCloses() throws Exception {
+        try (Wire w = new Wire()) {
+            w.start(new Echo());
+            w.send(Wire.hello());
+            String nonce = companionNonce(w.nextJson());
+            // (the proof of the other direction: the companion's own)
+            w.send(auth(2, Tokens.companionProof(Wire.TOKEN, Wire.CLIENT_NONCE, nonce)));
+            Map<String, Object> r = w.nextJson();
+            assertEquals(2L, r.get("id"));
+            assertEquals("auth_failed", code(r));
+            assertTrue(w.closedByCompanion());
+            assertFalse(w.session.authenticated());
+        }
+    }
+
+    @Test
+    public void aProofIsGoodForOneSessionOnly() throws Exception {
+        String proof;
+        try (Wire w = new Wire()) {
+            w.start(new Echo());
+            w.send(Wire.hello());
+            proof = Tokens.clientProof(Wire.TOKEN, companionNonce(w.nextJson()), Wire.CLIENT_NONCE);
+            w.send(auth(2, proof));
+            assertEquals(true, w.nextJson().get("ok"));
+        }
+        try (Wire w = new Wire()) {
+            w.start(new Echo());
+            // (the same client nonce, a fresh companion nonce)
+            w.send(Wire.hello());
+            w.nextJson();
+            w.send(auth(2, proof));
+            assertEquals("auth_failed", code(w.nextJson()));
+            assertTrue(w.closedByCompanion());
+        }
+    }
+
+    @Test
+    public void authOutOfOrder() throws Exception {
+        try (Wire w = new Wire()) {
+            w.start(new Echo());
+            // auth before hello: bad_request, the session goes on
+            w.send(auth(1, Wire.TOKEN));
+            Map<String, Object> r = w.nextJson();
+            assertEquals("bad_request", code(r));
+            // a malformed proof: bad_request, the session goes on
+            w.send(Wire.hello());
+            String nonce = companionNonce(w.nextJson());
+            w.send(auth(2, "ABC"));
+            r = w.nextJson();
+            assertEquals("bad_request", code(r));
+            assertEquals("proof", ((Map<?, ?>) ((Map<?, ?>) r.get("error")).get("data")).get("field"));
+            w.send(auth(3, Tokens.clientProof(Wire.TOKEN, nonce, Wire.CLIENT_NONCE)));
+            assertEquals(true, w.nextJson().get("ok"));
+            // a second auth, a second hello: bad_request
+            w.send(auth(4, Tokens.clientProof(Wire.TOKEN, nonce, Wire.CLIENT_NONCE)));
+            assertEquals("bad_request", code(w.nextJson()));
+            w.send(Wire.hello());
+            assertEquals("bad_request", code(w.nextJson()));
+            w.send(req(5, "ping", Json.obj()));
+            assertEquals(5L, w.nextJson().get("id"));
+        }
+    }
+
+    @Test
+    public void aRequestBetweenHelloAndAuthCloses() throws Exception {
+        try (Wire w = new Wire()) {
+            w.start(new Echo());
+            w.send(Wire.hello());
+            w.nextJson();
+            w.send(req(2, "ping", Json.obj()));
+            Map<String, Object> r = w.nextJson();
+            assertEquals(2L, r.get("id"));
+            assertEquals("handshake_required", code(r));
+            assertTrue(w.closedByCompanion());
+        }
+    }
+
+    @Test
+    public void helloChecks() throws Exception {
+        try (Wire w = new Wire()) {
+            w.start(new Echo());
+            // without a nonce: bad_request, the session goes on
+            w.send(req(1, "hello", Json.obj("protocols", Arrays.asList(2L), "token_id", Tokens.id(Wire.TOKEN))));
+            Map<String, Object> r = w.nextJson();
+            assertEquals("bad_request", code(r));
+            assertEquals("client_nonce", ((Map<?, ?>) ((Map<?, ?>) r.get("error")).get("data")).get("field"));
+            w.handshake();
+        }
+        try (Wire w = new Wire()) {
+            // a version-1 client: unsupported_protocol, closed
+            w.start(new Echo());
+            w.send(req(1, "hello", Json.obj("protocols", Arrays.asList(1L), "client", "axross")));
+            Map<String, Object> r = w.nextJson();
+            assertEquals("unsupported_protocol", code(r));
+            assertEquals(Arrays.asList(2L), ((Map<?, ?>) ((Map<?, ?>) r.get("error")).get("data")).get("supported"));
+            assertTrue(w.closedByCompanion());
         }
     }
 
@@ -85,8 +223,7 @@ public class SessionTest {
     public void handlerErrorsAreInternalWithoutDetails() throws Exception {
         try (Wire w = new Wire()) {
             w.start(new Echo());
-            w.send(Wire.hello());
-            w.nextJson();
+            w.handshake();
             w.send(req(2, "sms.status", Json.obj("send_id", 1L)));
             Map<String, Object> r = w.nextJson();
             assertEquals("internal", code(r));
@@ -100,8 +237,7 @@ public class SessionTest {
     public void blobBeforeItsAnswer() throws Exception {
         try (Wire w = new Wire()) {
             w.start(new Echo());
-            w.send(Wire.hello());
-            w.nextJson();
+            w.handshake();
             w.send(req(2, "mms.part_data", Json.obj("part_id", 301L)));
             Frame a = w.next();
             Frame b = w.next();
@@ -125,8 +261,7 @@ public class SessionTest {
             Echo h = new Echo();
             h.hold = true;
             w.start(h);
-            w.send(Wire.hello());
-            w.nextJson();
+            w.handshake();
             for (int i = 0; i < Protocol.MAX_IN_FLIGHT + 1; i++) {
                 w.send(req(10 + i, "threads.list", Json.obj()));
             }
@@ -149,8 +284,7 @@ public class SessionTest {
     public void tooLargeJsonIsAnsweredAndTheSessionGoesOn() throws Exception {
         try (Wire w = new Wire()) {
             w.start(new Echo());
-            w.send(Wire.hello());
-            w.nextJson();
+            w.handshake();
             StringBuilder big = new StringBuilder("{\"id\":2,\"method\":\"ping\",\"params\":{\"pad\":\"");
             while (big.length() <= Protocol.MAX_REQUEST_JSON) {
                 big.append("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
@@ -169,8 +303,7 @@ public class SessionTest {
     public void badIds() throws Exception {
         try (Wire w = new Wire()) {
             w.start(new Echo());
-            w.send(Wire.hello());
-            w.nextJson();
+            w.handshake();
             for (String text : new String[] {"{\"id\":0,\"method\":\"ping\"}", "{\"id\":2147483648,\"method\":\"ping\"}",
                     "{\"id\":\"2\",\"method\":\"ping\"}", "{\"id\":1.5,\"method\":\"ping\"}", "[1]"}) {
                 w.sendText(text);
@@ -200,11 +333,24 @@ public class SessionTest {
     }
 
     @Test
-    public void closeSendsTheReason() throws Exception {
+    public void handshakeTimeoutCoversAuth() throws Exception {
+        // (hello, but no auth within the 10 s)
         try (Wire w = new Wire()) {
             w.start(new Echo());
             w.send(Wire.hello());
-            w.nextJson();
+            assertEquals(true, w.nextJson().get("ok"));
+            Map<String, Object> r = w.nextJson();
+            assertEquals("session.closing", r.get("event"));
+            assertEquals("handshake_timeout", ((Map<?, ?>) r.get("data")).get("reason"));
+            assertTrue(w.closedByCompanion());
+        }
+    }
+
+    @Test
+    public void closeSendsTheReason() throws Exception {
+        try (Wire w = new Wire()) {
+            w.start(new Echo());
+            w.handshake();
             w.session.close("service_stopping", true);
             Map<String, Object> r = w.nextJson();
             assertEquals("service_stopping", ((Map<?, ?>) r.get("data")).get("reason"));
@@ -217,8 +363,7 @@ public class SessionTest {
     public void clientBlobsAreBoundedAndTaken() throws Exception {
         try (Wire w = new Wire()) {
             w.start(new Echo());
-            w.send(Wire.hello());
-            w.nextJson();
+            w.handshake();
             byte[] data = {1, 2, 3};
             w.sendRaw(Frame.blobChunk(5, false, data, 0, 2));
             w.sendRaw(Frame.blobChunk(5, true, data, 2, 1));
@@ -250,8 +395,7 @@ public class SessionTest {
         // events never block the caller, whatever the client does
         try (Wire w = new Wire()) {
             w.start(new Echo());
-            w.send(Wire.hello());
-            w.nextJson();
+            w.handshake();
             long start = System.nanoTime();
             for (int i = 0; i < 1000; i++) {
                 w.session.event("messages.changed", Json.obj());

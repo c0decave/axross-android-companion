@@ -16,6 +16,7 @@ import io.github.c0decave.axross.companion.protocol.Json;
 import io.github.c0decave.axross.companion.protocol.PeerPolicy;
 import io.github.c0decave.axross.companion.protocol.Protocol;
 import io.github.c0decave.axross.companion.protocol.Session;
+import io.github.c0decave.axross.companion.protocol.Tokens;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -34,9 +35,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * "axross-companion" (docs/PROTOCOL.md, section 1). Started by axross over
  * ADB ({@code am start-foreground-service}; the service is exported only to
  * holders of android.permission.DUMP - the shell, not apps) or from the
- * app's own screen. It accepts a peer only if it is uid 2000 or 0, shows
- * "axross is connected" while a client is attached, and stops by itself
- * five minutes after the last client left.
+ * app's own screen. Each start may carry a token ({@code --es token <64
+ * hex>}): the service keeps the last eight in memory, and a client must
+ * prove that it holds one (docs/PROTOCOL.md, section 4). It accepts a peer
+ * only if it is uid 2000 or 0, shows "axross is connected" while a client
+ * is attached, and stops by itself five minutes after the last client left.
  *
  * <p>Type dataSync: an ADB link meets none of connectedDevice's
  * prerequisites on Android 14+ (Bluetooth, USB device/accessory
@@ -45,10 +48,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class CompanionService extends Service {
     static final long IDLE_STOP_MS = 5 * 60_000L;
+    /** The start's extra that carries a token (never logged). */
+    static final String EXTRA_TOKEN = "token";
 
     private static volatile CompanionService running;
 
     private final List<Session> sessions = new CopyOnWriteArrayList<>();
+    /** The tokens the shell gave: in memory only, gone when the service stops. */
+    private final Tokens tokens = new Tokens();
     private ExecutorService workers;
     private ScheduledExecutorService timers;
     private Backend backend;
@@ -88,6 +95,7 @@ public final class CompanionService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        takeToken(intent);
         if (!goForeground()) {
             stopSelf();
             return START_NOT_STICKY;
@@ -99,6 +107,24 @@ public final class CompanionService extends Service {
         // (not restarted by Android after being killed: axross starts it
         // again when it connects)
         return START_NOT_STICKY;
+    }
+
+    private void takeToken(Intent intent) {
+        String token;
+        try {
+            token = intent == null ? null : intent.getStringExtra(EXTRA_TOKEN);
+        } catch (RuntimeException e) {
+            // (extras that do not unparcel)
+            token = null;
+        }
+        if (token == null) {
+            return;
+        }
+        if (tokens.add(token)) {
+            L.i("a token was given (" + tokens.size() + " kept)");
+        } else {
+            L.w("a malformed token was ignored");
+        }
     }
 
     /**
@@ -173,7 +199,7 @@ public final class CompanionService extends Service {
                 refuse(socket);
                 continue;
             }
-            Session session = new Session(transport(socket), uid, backend, workers, timers, L.SESSION);
+            Session session = new Session(transport(socket), uid, tokens, backend, workers, timers, L.SESSION);
             sessions.add(session);
             L.i("session " + session.number + ": connected (uid " + uid + ")");
             cancelIdleStop();
@@ -226,7 +252,7 @@ public final class CompanionService extends Service {
         }
     }
 
-    /** After hello: the client's name goes into the notification. */
+    /** After the handshake: the client's name goes into the notification. */
     void updateNotification() {
         if (stopping || !foreground) {
             return;
@@ -254,7 +280,7 @@ public final class CompanionService extends Service {
     /** "axross" and the version the client named in its hello. */
     private String clientName() {
         for (Session s : sessions) {
-            if (s.isOpen() && s.helloDone() && !s.clientVersion().isEmpty()) {
+            if (s.isOpen() && s.authenticated() && !s.clientVersion().isEmpty()) {
                 // (a client's own words: kept short and plain for the notification)
                 return "axross " + s.clientVersion().replaceAll("[^0-9A-Za-z.+-]", "");
             }

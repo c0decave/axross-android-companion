@@ -20,7 +20,10 @@ import org.junit.Test;
  * protocol/fixtures/sessions/*.json against the real session: the
  * fixture's "phone" answers stand in for the phone's data, everything else
  * (framing, handshake, checks, ids, blobs, events, closing) is this code.
- * The same files drive axross's fake companion (protocol/README.md).
+ * The service is given the fixture's token; the client's auth proof ("*")
+ * and the check of the companion's proof are computed from it. sms.send's
+ * client_ref goes through the real {@link SendTracker}. The same files
+ * drive axross's fake companion (protocol/README.md).
  */
 public class SessionFixturesTest {
     /** Answers from the fixture's "phone" section, in order per method. */
@@ -28,6 +31,9 @@ public class SessionFixturesTest {
         final Map<String, Object> hello;
         final Map<String, ArrayDeque<Map<String, Object>>> answers = new HashMap<>();
         final Map<Long, Object> results = new ConcurrentHashMap<>();
+        /** The sends, by client_ref (as Sender keeps them). */
+        final SendTracker sends = new SendTracker(System::currentTimeMillis);
+        final RateLimiter limiter = new RateLimiter(Protocol.SENDS_PER_MINUTE, Protocol.SENDS_PER_HOUR, System::currentTimeMillis);
 
         @SuppressWarnings("unchecked")
         Phone(Map<String, Object> phone) {
@@ -50,6 +56,16 @@ public class SessionFixturesTest {
         @Override
         @SuppressWarnings("unchecked")
         public void handle(Session session, Session.Call call) throws Exception {
+            boolean send = "sms.send".equals(call.method);
+            if (send) {
+                // (a client_ref accepted before: answered, no phone answer taken, no events)
+                Map<String, Object> earlier = sends.duplicate(((Requests.SmsSend) call.value).clientRef);
+                if (earlier != null) {
+                    results.put(call.id, earlier);
+                    call.ok(earlier);
+                    return;
+                }
+            }
             ArrayDeque<Map<String, Object>> q = answers.get(call.method);
             Map<String, Object> answer;
             synchronized (this) {
@@ -63,6 +79,15 @@ public class SessionFixturesTest {
             }
             Map<String, Object> result = new java.util.LinkedHashMap<>((Map<String, Object>) answer.get("result"));
             results.put(call.id, answer.get("result"));
+            if (send) {
+                // (the phone's result is what the tracker makes of the send)
+                Requests.SmsSend s = (Requests.SmsSend) call.value;
+                List<Integer> parts = new ArrayList<>();
+                for (Object r : (List<Object>) result.get("recipients")) {
+                    parts.add((int) (long) (Long) ((Map<String, Object>) r).get("parts"));
+                }
+                assertEquals("sms.send's phone result", sends.accept(session.number, s.clientRef, s.recipients, parts, limiter), result);
+            }
             if (answer.containsKey("blob")) {
                 Map<String, Object> blob = (Map<String, Object>) answer.get("blob");
                 call.okWithBlob(Wire.hex((String) blob.get("hex")), (String) blob.get("mime"), (String) blob.get("key"), result);
@@ -107,15 +132,31 @@ public class SessionFixturesTest {
     @SuppressWarnings("unchecked")
     private void run(String path) throws Exception {
         Map<String, Object> doc = Wire.fixture(path);
-        Phone phone = new Phone((Map<String, Object>) doc.get("phone"));
-        try (Wire w = new Wire()) {
+        Map<String, Object> phoneDoc = (Map<String, Object>) doc.get("phone");
+        String token = (String) phoneDoc.get("token");
+        assertTrue(path + ": phone.token", Tokens.isHex(token, 64));
+        Phone phone = new Phone(phoneDoc);
+        String clientNonce = null;
+        String companionNonce = null;
+        try (Wire w = new Wire(token)) {
             Session session = w.start(phone);
             int n = 0;
             for (Object o : (List<Object>) doc.get("steps")) {
                 Map<String, Object> step = (Map<String, Object>) o;
                 String where = path + " step " + n++;
                 if (step.containsKey("client")) {
-                    w.send((Map<String, Object>) step.get("client"));
+                    Map<String, Object> frame = new java.util.LinkedHashMap<>((Map<String, Object>) step.get("client"));
+                    Map<String, Object> params = frame.get("params") instanceof Map
+                            ? new java.util.LinkedHashMap<>((Map<String, Object>) frame.get("params")) : null;
+                    if ("hello".equals(frame.get("method")) && params != null) {
+                        clientNonce = (String) params.get("client_nonce");
+                    }
+                    if ("auth".equals(frame.get("method")) && params != null && "*".equals(params.get("proof"))) {
+                        assertNotNull(where + ": no companion_nonce before auth", companionNonce);
+                        params.put("proof", Tokens.clientProof(token, companionNonce, clientNonce));
+                        frame.put("params", params);
+                    }
+                    w.send(frame);
                 } else if (step.containsKey("client_text")) {
                     w.sendText((String) step.get("client_text"));
                 } else if (step.containsKey("client_hex")) {
@@ -133,6 +174,15 @@ public class SessionFixturesTest {
                 } else if (step.containsKey("companion")) {
                     Map<String, Object> got = w.nextJson();
                     match(where, step.get("companion"), got, phone);
+                    Object result = got.get("result");
+                    if (result instanceof Map && ((Map<String, Object>) result).get("auth") instanceof Map) {
+                        // (hello's answer: the companion's proof, from the token)
+                        Map<String, Object> auth = (Map<String, Object>) ((Map<String, Object>) result).get("auth");
+                        companionNonce = (String) auth.get("companion_nonce");
+                        assertTrue(where + ": companion_nonce", Tokens.isHex(companionNonce, 64));
+                        assertEquals(where + ": the companion's proof",
+                                Tokens.companionProof(token, clientNonce, companionNonce), auth.get("proof"));
+                    }
                 } else if (step.containsKey("companion_blob")) {
                     Map<String, Object> b = (Map<String, Object>) step.get("companion_blob");
                     ByteArrayOutputStream data = new ByteArrayOutputStream();
