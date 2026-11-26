@@ -1,11 +1,12 @@
 {
   "name": "send",
-  "description": "An SMS to one recipient: the answer, then sms.sent and sms.delivered; refusals by the check (too many recipients, a bad number) and by the phone (rate limit, not the default SMS app for a delete).",
+  "description": "An SMS to one recipient (with a client_ref): the answer, then sms.sent and sms.delivered; refusals by the check (too many recipients, a bad number) and by the phone (rate limit, not the default SMS app for a delete).",
   "phone": {
+    "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
       "app": "axross-android-companion",
-      "app_version": "0.1.0",
-      "app_version_code": 100,
+      "app_version": "0.1.1",
+      "app_version_code": 101,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -58,20 +59,22 @@
       "sms.send": [
         {
           "result": {
-            "send_id": 3,
+            "send_id": 1,
             "recipients": [
               {
                 "index": 0,
                 "address": "+15555215554",
                 "parts": 1
               }
-            ]
+            ],
+            "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41",
+            "duplicate": false
           },
           "events": [
             {
               "event": "sms.sent",
               "data": {
-                "send_id": 3,
+                "send_id": 1,
                 "index": 0,
                 "address": "+15555215554"
               }
@@ -79,7 +82,7 @@
             {
               "event": "sms.delivered",
               "data": {
-                "send_id": 3,
+                "send_id": 1,
                 "index": 0,
                 "address": "+15555215554",
                 "status": "complete"
@@ -100,7 +103,7 @@
       "sms.status": [
         {
           "result": {
-            "send_id": 3,
+            "send_id": 1,
             "recipients": [
               {
                 "index": 0,
@@ -108,7 +111,8 @@
                 "state": "delivered",
                 "reason": null
               }
-            ]
+            ],
+            "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"
           }
         }
       ],
@@ -132,10 +136,12 @@
         "method": "hello",
         "params": {
           "protocols": [
-            1
+            2
           ],
           "client": "axross",
-          "client_version": "0.15.183"
+          "client_version": "0.15.186",
+          "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+          "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
         }
       }
     },
@@ -144,10 +150,10 @@
         "id": 1,
         "ok": true,
         "result": {
-          "protocol": 1,
+          "protocol": 2,
           "app": "axross-android-companion",
-          "app_version": "0.1.0",
-          "app_version_code": 100,
+          "app_version": "0.1.1",
+          "app_version_code": 101,
           "package": "io.github.c0decave.axross.companion",
           "android": {
             "sdk_int": 34,
@@ -194,6 +200,10 @@
             "READ_CONTACTS": true,
             "READ_PHONE_STATE": true,
             "POST_NOTIFICATIONS": true
+          },
+          "auth": {
+            "companion_nonce": "*",
+            "proof": "*"
           }
         }
       }
@@ -201,6 +211,22 @@
     {
       "client": {
         "id": 2,
+        "method": "auth",
+        "params": {
+          "proof": "*"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 2,
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "client": {
+        "id": 3,
         "method": "sms.send",
         "params": {
           "recipients": [
@@ -208,13 +234,14 @@
           ],
           "text": "Hello from axross",
           "sub_id": 1,
-          "delivery_report": true
+          "delivery_report": true,
+          "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"
         }
       }
     },
     {
       "companion": {
-        "id": 2,
+        "id": 3,
         "ok": true,
         "result": "=phone"
       }
@@ -223,7 +250,7 @@
       "companion": {
         "event": "sms.sent",
         "data": {
-          "send_id": 3,
+          "send_id": 1,
           "index": 0,
           "address": "+15555215554"
         }
@@ -233,7 +260,7 @@
       "companion": {
         "event": "sms.delivered",
         "data": {
-          "send_id": 3,
+          "send_id": 1,
           "index": 0,
           "address": "+15555215554",
           "status": "complete"
@@ -242,23 +269,23 @@
     },
     {
       "client": {
-        "id": 3,
+        "id": 4,
         "method": "sms.status",
         "params": {
-          "send_id": 3
+          "send_id": 1
         }
       }
     },
     {
       "companion": {
-        "id": 3,
+        "id": 4,
         "ok": true,
         "result": "=phone"
       }
     },
     {
       "client": {
-        "id": 4,
+        "id": 5,
         "method": "sms.send",
         "params": {
           "recipients": [
@@ -280,7 +307,7 @@
     },
     {
       "companion": {
-        "id": 4,
+        "id": 5,
         "ok": false,
         "error": {
           "code": "too_many_recipients",
@@ -293,7 +320,7 @@
     },
     {
       "client": {
-        "id": 5,
+        "id": 6,
         "method": "sms.send",
         "params": {
           "recipients": [
@@ -305,7 +332,7 @@
     },
     {
       "companion": {
-        "id": 5,
+        "id": 6,
         "ok": false,
         "error": {
           "code": "bad_request",
@@ -318,7 +345,7 @@
     },
     {
       "client": {
-        "id": 6,
+        "id": 7,
         "method": "sms.send",
         "params": {
           "recipients": [
@@ -330,7 +357,7 @@
     },
     {
       "companion": {
-        "id": 6,
+        "id": 7,
         "ok": false,
         "error": {
           "code": "rate_limited",
@@ -343,7 +370,7 @@
     },
     {
       "client": {
-        "id": 7,
+        "id": 8,
         "method": "message.delete",
         "params": {
           "kind": "sms",
@@ -353,7 +380,7 @@
     },
     {
       "companion": {
-        "id": 7,
+        "id": 8,
         "ok": false,
         "error": {
           "code": "not_default_sms_app",

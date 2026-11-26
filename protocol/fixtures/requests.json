@@ -1,15 +1,17 @@
 {
-  "description": "Requests and what the companion's check of their parameters says (docs/PROTOCOL.md, section 7): 'ok', or the error code (and, for bad_request, the field). These are the checks only: an 'ok' request can still fail on the phone (permission_denied, not_found, ...). Unknown parameters are ignored.",
+  "description": "Requests and what the companion's check of their parameters says (docs/PROTOCOL.md, sections 4 and 7): 'ok', or the error code (and, for bad_request, the field). hello's versions are checked first: a hello without a common version is unsupported_protocol, whatever else it has. These are the checks only: an 'ok' request can still fail on the phone (permission_denied, not_found, ...) or in the session (unknown_token, auth_failed). Unknown parameters are ignored.",
   "cases": [
     {
       "name": "hello",
       "method": "hello",
       "params": {
         "protocols": [
-          1
+          2
         ],
         "client": "axross",
-        "client_version": "0.15.183"
+        "client_version": "0.15.186",
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
       },
       "expect": "ok"
     },
@@ -21,14 +23,19 @@
           3,
           2,
           1
-        ]
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
       },
       "expect": "ok"
     },
     {
       "name": "hello without protocols",
       "method": "hello",
-      "params": {},
+      "params": {
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
       "expect": "bad_request",
       "field": "protocols"
     },
@@ -36,7 +43,9 @@
       "name": "hello with an empty list",
       "method": "hello",
       "params": {
-        "protocols": []
+        "protocols": [],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
       },
       "expect": "bad_request",
       "field": "protocols"
@@ -46,8 +55,10 @@
       "method": "hello",
       "params": {
         "protocols": [
-          "1"
-        ]
+          "2"
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
       },
       "expect": "bad_request",
       "field": "protocols"
@@ -57,12 +68,238 @@
       "method": "hello",
       "params": {
         "protocols": [
-          1
+          2
         ],
-        "client": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        "client": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
       },
       "expect": "bad_request",
       "field": "client"
+    },
+    {
+      "name": "hello of a version-1 client",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          1
+        ],
+        "client": "axross",
+        "client_version": "0.15.185"
+      },
+      "expect": "unsupported_protocol"
+    },
+    {
+      "name": "hello of version 1 only, with a nonce and a token id",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          1
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
+      "expect": "unsupported_protocol"
+    },
+    {
+      "name": "hello of version 7 only",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          7
+        ]
+      },
+      "expect": "unsupported_protocol"
+    },
+    {
+      "name": "hello without client_nonce",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
+      "expect": "bad_request",
+      "field": "client_nonce"
+    },
+    {
+      "name": "hello without token_id",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee"
+      },
+      "expect": "bad_request",
+      "field": "token_id"
+    },
+    {
+      "name": "hello without either",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ]
+      },
+      "expect": "bad_request",
+      "field": "client_nonce"
+    },
+    {
+      "name": "hello, client_nonce in capitals",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "3DCDD07D15067A98EDB7285E0077180495EEE15A99A75FC773BCDF5F636A61EE",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
+      "expect": "bad_request",
+      "field": "client_nonce"
+    },
+    {
+      "name": "hello, client_nonce of 63 characters",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61e",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
+      "expect": "bad_request",
+      "field": "client_nonce"
+    },
+    {
+      "name": "hello, client_nonce of 65 characters",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee0",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
+      "expect": "bad_request",
+      "field": "client_nonce"
+    },
+    {
+      "name": "hello, client_nonce not hex",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "gdcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
+      "expect": "bad_request",
+      "field": "client_nonce"
+    },
+    {
+      "name": "hello, client_nonce a number",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": 12345,
+        "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+      },
+      "expect": "bad_request",
+      "field": "client_nonce"
+    },
+    {
+      "name": "hello, token_id of 64 characters (the token itself)",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f"
+      },
+      "expect": "bad_request",
+      "field": "token_id"
+    },
+    {
+      "name": "hello, token_id in capitals",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "8C1B57B8B3A7A0C67DDECE853A774618"
+      },
+      "expect": "bad_request",
+      "field": "token_id"
+    },
+    {
+      "name": "hello, token_id not hex",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          2
+        ],
+        "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+        "token_id": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+      },
+      "expect": "bad_request",
+      "field": "token_id"
+    },
+    {
+      "name": "auth",
+      "method": "auth",
+      "params": {
+        "proof": "4d5175a6ce633fb1cf9140b86254209ff14aaf09a553f91df613cbb4e890d7f9"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "auth without proof",
+      "method": "auth",
+      "params": {},
+      "expect": "bad_request",
+      "field": "proof"
+    },
+    {
+      "name": "auth, proof in capitals",
+      "method": "auth",
+      "params": {
+        "proof": "4D5175A6CE633FB1CF9140B86254209FF14AAF09A553F91DF613CBB4E890D7F9"
+      },
+      "expect": "bad_request",
+      "field": "proof"
+    },
+    {
+      "name": "auth, proof of 63 characters",
+      "method": "auth",
+      "params": {
+        "proof": "4d5175a6ce633fb1cf9140b86254209ff14aaf09a553f91df613cbb4e890d7f"
+      },
+      "expect": "bad_request",
+      "field": "proof"
+    },
+    {
+      "name": "auth, proof not hex",
+      "method": "auth",
+      "params": {
+        "proof": "----------------------------------------------------------------"
+      },
+      "expect": "bad_request",
+      "field": "proof"
+    },
+    {
+      "name": "auth, proof a number",
+      "method": "auth",
+      "params": {
+        "proof": 1
+      },
+      "expect": "bad_request",
+      "field": "proof"
     },
     {
       "name": "ping",
@@ -684,12 +921,169 @@
       "field": "delivery_report"
     },
     {
+      "name": "send with a client_ref",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send, client_ref of 64 characters",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": "A-z_9A-z_9A-z_9A-z_9A-z_9A-z_9A-z_9A-z_9A-z_9A-z_9A-z_9A-z_9abcd"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send, client_ref of one character",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": "_"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send, client_ref of 65 characters",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
+      "name": "send, empty client_ref",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": ""
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
+      "name": "send, client_ref with a space",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": "a b"
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
+      "name": "send, client_ref with a dot",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": "a.b"
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
+      "name": "send, client_ref not ASCII",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": "r\u00e9f"
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
+      "name": "send, client_ref a number",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "client_ref": 42
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
       "name": "send status",
       "method": "sms.status",
       "params": {
         "send_id": 3
       },
       "expect": "ok"
+    },
+    {
+      "name": "send status by client_ref",
+      "method": "sms.status",
+      "params": {
+        "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send status by both",
+      "method": "sms.status",
+      "params": {
+        "send_id": 3,
+        "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10"
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
+      "name": "send status by neither",
+      "method": "sms.status",
+      "params": {},
+      "expect": "bad_request",
+      "field": "send_id"
+    },
+    {
+      "name": "send status, malformed client_ref",
+      "method": "sms.status",
+      "params": {
+        "client_ref": "a/b"
+      },
+      "expect": "bad_request",
+      "field": "client_ref"
+    },
+    {
+      "name": "send status, send_id 0",
+      "method": "sms.status",
+      "params": {
+        "send_id": 0
+      },
+      "expect": "bad_request",
+      "field": "send_id"
     },
     {
       "name": "MMS parts",
@@ -717,7 +1111,7 @@
       "field": "part_id"
     },
     {
-      "name": "MMS send (version 1 has none)",
+      "name": "MMS send (not in this version)",
       "method": "mms.send",
       "params": {
         "recipients": [

@@ -3,7 +3,7 @@
 
     python3 -I scripts/ci/check_protocol.py
 
-- protocol/schema/protocol-v1.schema.json is valid JSON whose $refs all
+- protocol/schema/protocol-v2.schema.json is valid JSON whose $refs all
   resolve, with params and result for every method and data for every
   event;
 - protocol/fixtures/frames.json decodes as it says (with the reference
@@ -13,14 +13,17 @@
 - every step of protocol/fixtures/sessions/*.json validates: client frames
   as requests with their params, companion frames as responses (with the
   result of the method they answer) or events (with their data), the phone
-  answers and events likewise;
+  answers and events likewise ("*", the fixtures' wildcard, passes); the
+  phone has a token, and every hello names it by its token_id unless the
+  session expects unknown_token;
 - docs/PROTOCOL.md names every method, event and error code of the schema.
 
 A small validator for the subset of JSON Schema the file uses (type,
-properties, required, items, enum, const, minimum, maximum, minLength,
-maxLength, minItems, maxItems, oneOf, anyOf, allOf, not, $ref). Exits 1
+properties, required, items, enum, const, pattern, minimum, maximum,
+minLength, maxLength, minItems, maxItems, oneOf, anyOf, allOf, not, $ref). Exits 1
 with one line per finding.
 """
+import hashlib
 import json
 import re
 import sys
@@ -30,8 +33,10 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import companion_client  # noqa: E402  (the codec under test)
 
-SCHEMA = json.loads((ROOT / "protocol/schema/protocol-v1.schema.json").read_text(encoding="utf-8"))
+SCHEMA = json.loads((ROOT / "protocol/schema/protocol-v2.schema.json").read_text(encoding="utf-8"))
 problems = []
+# (while the session fixtures are checked: "*" stands for any value)
+wildcard = False
 
 
 def resolve(ref):
@@ -57,6 +62,8 @@ def type_ok(value, t):
 def errors(value, schema, path="$"):
     """The ways value fails schema (empty: it validates)."""
     out = []
+    if wildcard and value == "*":
+        return out
     if "$ref" in schema:
         out += errors(value, resolve(schema["$ref"]), path)
     if "type" in schema and not type_ok(value, schema["type"]):
@@ -71,6 +78,8 @@ def errors(value, schema, path="$"):
         if "maximum" in schema and value > schema["maximum"]:
             out.append(f"{path}: above {schema['maximum']}")
     if isinstance(value, str):
+        if "pattern" in schema and not re.search(schema["pattern"], value):
+            out.append(f"{path}: does not match {schema['pattern']}")
         n = len(value.encode("utf-16-le")) // 2
         if n < schema.get("minLength", 0) or n > schema.get("maxLength", 1 << 62):
             out.append(f"{path}: length {n} out of range")
@@ -178,14 +187,31 @@ def check_requests():
             problems.append(f"{where}: unknown error code {case['expect']}")
 
 
+def token_id(token):
+    return hashlib.sha256(token.encode("ascii")).hexdigest()[:32]
+
+
 def check_sessions():
+    global wildcard
+    wildcard = True
     for path in sorted((ROOT / "protocol/fixtures/sessions").glob("*.json")):
         doc = json.loads(path.read_text(encoding="utf-8"))
         name = path.name
         methods = {}
-        answers = {k: list(v) for k, v in doc["phone"]["answers"].items()}
+        token = doc["phone"].get("token")
+        if not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{64}", token):
+            problems.append(f"{name}: phone.token is not 64 lowercase hex characters")
+            token = ""
+        codes = {s["companion"]["error"]["code"] for s in doc["steps"]
+                 if "companion" in s and s["companion"].get("ok") is False}
+        for i, step in enumerate(doc["steps"]):
+            frame = step.get("client", {})
+            if frame.get("method") == "hello" and "token_id" in frame.get("params", {}):
+                if (frame["params"]["token_id"] == token_id(token)) == ("unknown_token" in codes):
+                    problems.append(f"{name} step {i}: token_id and the expected unknown_token disagree")
         hello = doc["phone"]["hello"]
-        check(dict(hello, protocol=1), SCHEMA["x-methods"]["hello"]["result"], f"{name} phone.hello")
+        check(dict(hello, protocol=2, auth={"companion_nonce": "0" * 64, "proof": "0" * 64}),
+              SCHEMA["x-methods"]["hello"]["result"], f"{name} phone.hello")
         for method, lst in doc["phone"]["answers"].items():
             if method not in SCHEMA["x-methods"]:
                 problems.append(f"{name}: answers for unknown method {method}")
@@ -209,6 +235,10 @@ def check_sessions():
                 frame = step["client"]
                 check(frame, SCHEMA["$defs"]["Request"], where)
                 methods[frame["id"]] = frame["method"]
+                expected = next((s["companion"] for s in doc["steps"][i + 1:]
+                                 if "companion" in s and s["companion"].get("id") == frame["id"]), None)
+                if expected is not None and expected.get("ok") is True and frame["method"] in SCHEMA["x-methods"]:
+                    check(frame.get("params", {}), SCHEMA["x-methods"][frame["method"]]["params"], where + " params")
             elif "companion" in step:
                 frame = step["companion"]
                 if "event" in frame:
@@ -226,6 +256,7 @@ def check_sessions():
                 check_event(step["phone_event"], where)
             elif not any(k in step for k in ("client_text", "client_hex", "client_blob", "companion_blob", "companion_closes")):
                 problems.append(f"{where}: unknown step {sorted(step)}")
+    wildcard = False
 
 
 def check_event(ev, where, partial=False):

@@ -8,7 +8,7 @@ companion and its client tests can use them too.
 
 | file | what it is |
 |---|---|
-| `schema/protocol-v1.schema.json` | JSON Schema 2020-12. The root validates any JSON frame. `x-methods.<method>.params` / `.result` and `x-events.<event>` point at the `$defs` for each method and event; `x-error-codes` lists the error codes. Unknown fields are allowed everywhere. |
+| `schema/protocol-v2.schema.json` | JSON Schema 2020-12. The root validates any JSON frame. `x-methods.<method>.params` / `.result` and `x-events.<event>` point at the `$defs` for each method and event; `x-error-codes` lists the error codes. Unknown fields are allowed everywhere. |
 | `fixtures/frames.json` | Frames as hex bytes. A case with `kind` decodes to exactly one frame (`json` with that object, or `blob` with that id, LAST flag and data); a case with `error` must make a reader give up on the stream. |
 | `fixtures/requests.json` | Requests and what the companion's parameter check answers: `"expect": "ok"`, or an error code (with `field` for `bad_request` where it is fixed). Only the checks: an `ok` request can still fail on the phone. |
 | `fixtures/sessions/*.json` | Scripted sessions: what the client sends, what the companion answers, given canned phone data. |
@@ -19,7 +19,8 @@ companion and its client tests can use them too.
 {
   "name": "...", "description": "...",
   "phone": {
-    "hello": { ...hello's result without "protocol"... },
+    "token": "<64 hex>",
+    "hello": { ...hello's result without "protocol" and "auth"... },
     "answers": {
       "<method>": [ <answer>, <answer>, ... ]
     }
@@ -27,6 +28,8 @@ companion and its client tests can use them too.
   "steps": [ <step>, ... ]
 }
 ```
+
+`token` is the token the service was started with (`--es token`).
 
 `answers` are what the phone side gives for a method that passed the
 checks, one per call in order. An answer is `{"result": {...}}` or
@@ -40,6 +43,14 @@ checks, one per call in order. An answer is `{"result": {...}}` or
 Requests that the checks refuse (`fixtures/requests.json`'s errors) never
 reach the phone and take no answer from the list.
 
+`sms.send`: a phone result is the companion's whole answer to a fresh send
+(`send_id`, `recipients`, `client_ref` when the request had one,
+`"duplicate": false`); the session's sends are numbered 1, 2, ... in their
+order, as a fresh service numbers them. An `sms.send` whose `client_ref` an
+earlier send of the session was accepted with takes no answer from the
+list: the companion answers it with that send's result and
+`"duplicate": true`, and sends none of its events.
+
 Steps, in order:
 
 | step | meaning |
@@ -52,6 +63,16 @@ Steps, in order:
 | `{"companion": {...}}` | the next frame from the companion is a JSON frame that matches |
 | `{"companion_blob": {"blob", "hex"}}` | the next frames are the chunks of this blob, with these bytes in all |
 | `{"companion_closes": true}` | the companion closes the connection (no frame before the end, beyond those listed) |
+
+The handshake. Every session that gets that far starts with `hello`
+(protocol 2) and `auth`. The client's `client_nonce` is fixed in the
+fixture and its `token_id` is the phone token's id (except in
+`unknown_token.json`). In the expected frames, the companion's
+`companion_nonce` and `proof` are `"*"`, and so is the client's `auth`
+proof where it is meant to be right: a replay computes them from `token`
+(section 4 of docs/PROTOCOL.md) - it sends the client's proof made from the
+`companion_nonce` it got, and checks the companion's proof. A fixed proof
+(`auth_fails.json`) is sent as it is.
 
 Matching: an expected object matches when each of its keys is in the
 actual object with a matching value (more keys in the actual are fine); a

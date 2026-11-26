@@ -1,11 +1,12 @@
 {
   "name": "before hello",
-  "description": "Any request before hello is refused and the companion closes.",
+  "description": "auth before hello is bad_request (the session goes on); any other request before hello is refused and the companion closes.",
   "phone": {
+    "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
       "app": "axross-android-companion",
-      "app_version": "0.1.0",
-      "app_version_code": 100,
+      "app_version": "0.1.1",
+      "app_version_code": 101,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -60,13 +61,35 @@
     {
       "client": {
         "id": 1,
+        "method": "auth",
+        "params": {
+          "proof": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 1,
+        "ok": false,
+        "error": {
+          "code": "bad_request",
+          "message": "*",
+          "data": {
+            "field": "method"
+          }
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 2,
         "method": "threads.list",
         "params": {}
       }
     },
     {
       "companion": {
-        "id": 1,
+        "id": 2,
         "ok": false,
         "error": {
           "code": "handshake_required",

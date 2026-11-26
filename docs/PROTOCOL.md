@@ -1,11 +1,11 @@
-# axross companion protocol, version 1
+# axross companion protocol, version 2
 
 The protocol between axross (the desktop file manager, the **client**) and
 axross-android-companion (the app on the phone, the **companion**). This
 file is the definition; the app implements it, and axross's fake companion is
 built from it. Machine-readable parts:
 
-- [`protocol/schema/protocol-v1.schema.json`](../protocol/schema/protocol-v1.schema.json):
+- [`protocol/schema/protocol-v2.schema.json`](../protocol/schema/protocol-v2.schema.json):
   JSON Schema (2020-12) for every envelope, every method's `params` and
   `result`, every event and the message/contact/thread objects;
 - [`protocol/fixtures/`](../protocol/fixtures/): frames as bytes (hex), requests that
@@ -17,6 +17,13 @@ built from it. Machine-readable parts:
   test uses.
 
 Words: *must*, *must not*, *should*, *may* as in RFC 2119.
+
+Version 2 (companion 0.1.1) differs from version 1 (0.1.0) in three
+things: the service is given a token by the shell and both sides prove in
+the handshake that they hold it (sections 4 and 9); `sms.send` takes a
+`client_ref`, and a send asked for again with the same `client_ref` is not
+sent again (section 7); `sms.status` can look a send up by its
+`client_ref`. A companion speaks one version only: 0.1.1 speaks 2.
 
 ## 1. Transport
 
@@ -32,6 +39,12 @@ Words: *must*, *must not*, *should*, *may* as in RFC 2119.
   uid is closed at once: nothing is read, nothing is written, the log says
   only "refused uid N". Other apps on the phone therefore cannot use the
   socket.
+- **The client checks the companion.** While the service does not run,
+  any app may listen on the abstract name `axross-companion` itself, and
+  adbd would connect the client to it. So the client gives the service a
+  token when it starts it (section 9: only the shell can), and the
+  companion must prove in `hello` that it holds that token (section 4).
+  The client sends nothing but `hello` before that proof.
 - The service that listens is started by the client over ADB
   (section 9); it stops by itself five minutes after the last client left.
 - At most **4 sessions** at a time. A fifth connection gets the event
@@ -79,8 +92,8 @@ flags bit 0 = LAST (this chunk completes the blob); other bits 0.
   `protocol_error`). A blob id must not be reused while a blob with that id
   is incomplete or unreferenced. Unreferenced blobs are dropped at the end
   of a session.
-- Version 1 has no method that takes a blob from the client (MMS sending
-  and MMS restore come later); the companion accepts and bounds client
+- This version has no method that takes a blob from the client (MMS
+  sending and MMS restore come later); the companion accepts and bounds client
   blobs already so that the framing need not change.
 
 ## 3. Messages in JSON frames
@@ -117,42 +130,93 @@ additions add fields, never change their meaning).
 
 ## 4. Handshake
 
-The client speaks first. Its first request must be `hello`; within **10 s**
-of the connection, or the companion closes it.
+### The token
+
+- The client makes a **token**: 32 random bytes written as 64 lowercase
+  hex characters. It starts (or nudges) the service with it, over ADB
+  (section 9): `am start-foreground-service ... --es token <64 hex>`.
+- The service keeps the tokens it was given **in memory only** (never on
+  disk, never in the log), at most **8**: a ninth drops the oldest; one
+  given again counts as the newest. A malformed token (not 64 lowercase
+  hex characters) is ignored. They are gone when the service stops.
+- `token_id`: the first 32 hex characters of the lowercase hex SHA-256 of
+  the token's 64 ASCII characters. It names the token without telling it.
+
+### `hello` and `auth`
+
+The client speaks first: `hello`, then `auth`, both within **10 s** of the
+connection, or the companion closes it (`handshake_timeout`).
 
 ```json
-{"id": 1, "method": "hello", "params": {"protocols": [1], "client": "axross", "client_version": "0.15.183"}}
+{"id": 1, "method": "hello", "params": {"protocols": [2], "client": "axross", "client_version": "0.15.186",
+ "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+ "token_id": "8c1b57b8b3a7a0c67ddece853a774618"}}
 ```
 
 ```json
 {"id": 1, "ok": true, "result": {
-  "protocol": 1,
+  "protocol": 2,
   "app": "axross-android-companion",
-  "app_version": "0.1.0",
-  "app_version_code": 100,
+  "app_version": "0.1.1",
+  "app_version_code": 101,
   "package": "io.github.c0decave.axross.companion",
   "android": {"sdk_int": 34, "release": "14", "manufacturer": "Google", "model": "sdk_gphone64_x86_64"},
   "capabilities": ["contacts", "contacts.photo", "threads", "messages", "messages.search", "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts", "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore"],
   "limits": {"max_frame": 16777216, "max_request_json": 4194304, "max_blob_in": 8388608, "max_blobs_pending": 33554432, "max_blob_out": 67108864, "max_in_flight": 8, "max_recipients": 10, "max_text_chars": 5000, "max_parts": 30, "sends_per_minute": 20, "sends_per_hour": 100, "max_page": 500},
   "default_sms_app": false,
-  "permissions": {"READ_SMS": true, "SEND_SMS": true, "RECEIVE_SMS": true, "READ_CONTACTS": true, "READ_PHONE_STATE": true, "POST_NOTIFICATIONS": true}
+  "permissions": {"READ_SMS": true, "SEND_SMS": true, "RECEIVE_SMS": true, "READ_CONTACTS": true, "READ_PHONE_STATE": true, "POST_NOTIFICATIONS": true},
+  "auth": {"companion_nonce": "<64 hex>", "proof": "<64 hex>"}
 }}
 ```
 
+```json
+{"id": 2, "method": "auth", "params": {"proof": "<64 hex>"}}
+{"id": 2, "ok": true, "result": {}}
+```
+
 - `protocols`: the versions the client speaks (non-empty, at most 16
-  integers). The companion picks the highest it shares; with none in common
-  it answers `unsupported_protocol` with `data.supported` (e.g. `[1]`) and
-  closes.
+  integers). The companion picks the highest it shares. With none in
+  common it answers `unsupported_protocol` with `data.supported` (`[2]`)
+  and closes - also when the rest of the `hello` is of an older version.
 - `client`, `client_version`: strings of at most 64 characters, for the log
   and the notification; optional.
+- `client_nonce` (required): 32 random bytes as 64 lowercase hex
+  characters, new for every connection. `token_id` (required): 32 lowercase
+  hex characters, the id of the client's token. Missing or malformed:
+  `bad_request` with `field` `client_nonce` or `token_id` (the session goes
+  on, within the 10 s).
+- The companion looks the token up by `token_id`. Not there: the error
+  **`unknown_token`** (no data), and it closes. The client then starts the
+  service with its token again and tries once more.
+- Else the result has, beside the rest, `auth`: `companion_nonce`, 32 fresh
+  random bytes as 64 lowercase hex characters, and `proof`, the lowercase
+  hex HMAC-SHA256 whose key is the token's 64 characters (their UTF-8 bytes,
+  not the 32 bytes they spell), over the UTF-8 text
+
+  ```
+  axross-companion-2 companion <client_nonce> <companion_nonce>
+  ```
+
+  (single spaces, no newline).
+- The client checks the proof, in constant time. A wrong or missing proof:
+  the client closes and tells its user that something else answers on the
+  companion's socket; it sends no other request.
+- **`auth`** `{"proof": "<64 hex>"}`: the client's proof, HMAC-SHA256 with
+  the same key over `axross-companion-2 client <companion_nonce>
+  <client_nonce>`. Right: the result `{}`, and the session is open for every
+  method. Wrong: the error **`auth_failed`**, and the companion closes. A
+  proof that is not 64 lowercase hex characters: `bad_request` (`field`
+  `proof`). `auth` before `hello`, or a second `auth`: `bad_request`
+  (`field` `method`).
+- Any method other than `hello` and `auth` before a successful `auth`:
+  `handshake_required`, then the companion closes. A second `hello`:
+  `bad_request` (`field` `method`).
 - `capabilities` says what this companion implements. A method whose
   capability is missing answers `not_implemented`. `mms.send` is not in
-  version 1.
+  this version.
 - `permissions` and `default_sms_app` are the state at the time of the
   answer (`status` reads them again). Absent `POST_NOTIFICATIONS` below
   Android 13 is reported as `true` (no such permission there).
-- Any other method before `hello`: `handshake_required`, then the
-  companion closes. A second `hello`: `bad_request`.
 
 ## 5. Errors
 
@@ -160,12 +224,14 @@ of the connection, or the companion closes it.
 |---|---|---|
 | `bad_request` | malformed request, a parameter missing, of the wrong type or out of range | `field`: the parameter's name |
 | `unknown_method` | no such method | |
-| `handshake_required` | a request before `hello` (the session is closed) | |
+| `handshake_required` | a request before `hello` and `auth` are done (the session is closed) | |
 | `unsupported_protocol` | no common version (the session is closed) | `supported` |
+| `unknown_token` | `hello`'s `token_id` names no token the service was given (the session is closed) | |
+| `auth_failed` | `auth`'s proof is wrong (the session is closed) | |
 | `not_implemented` | known, not in this version (`mms.send`; MMS in a restore) | |
 | `permission_denied` | the runtime permission it needs is not granted | `permission` |
 | `not_default_sms_app` | Android lets only the default SMS app write messages (delete, mark read, restore) | `default_sms_package` (may be null) |
-| `not_found` | no such message, thread, contact, part, send, export, restore | |
+| `not_found` | no such message, thread, contact, part, send (by `send_id` or `client_ref`), export, restore | |
 | `too_many_recipients` | more than `limits.max_recipients` | `max` |
 | `too_large` | a text over `max_text_chars` or more than `max_parts` parts, a frame over `max_request_json`, a part over `max_blob_out` | `max` |
 | `rate_limited` | sending would exceed the send limits | `retry_after_ms` |
@@ -252,8 +318,9 @@ is the user's text), or another of Android's names in lower case.
 Parameters in `[]` are optional, with their default. "Needs" names the
 runtime permission; without it the answer is `permission_denied`.
 
-### `hello`, `ping`, `status`
+### `hello`, `auth`, `ping`, `status`
 
+- `hello` and `auth`: section 4.
 - `ping` `{}` → `{"time": <ms>}`.
 - `status` `{}` → `{"default_sms_app": bool, "default_sms_package": str|null,
   "permissions": {...as in hello}, "subscribed": [event names], "sessions": n}`.
@@ -312,7 +379,8 @@ first; the companion does not ask again.
 ### `sms.send` (needs SEND_SMS)
 
 ```json
-{"id": 9, "method": "sms.send", "params": {"recipients": ["+15555215554"], "text": "Hi", "sub_id": 1, "delivery_report": true}}
+{"id": 9, "method": "sms.send", "params": {"recipients": ["+15555215554"], "text": "Hi", "sub_id": 1, "delivery_report": true,
+ "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"}}
 ```
 
 - `recipients`: 1..**10** strings (`limits.max_recipients`), each at most
@@ -325,6 +393,18 @@ first; the companion does not ask again.
 - `sub_id`: optional; an active subscription's id (`no_subscription`
   otherwise); absent or `-1`: the phone's default for SMS.
 - `delivery_report`: optional, default `true`.
+- `client_ref`: optional; the client's name for this send, 1..64
+  characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (malformed: `bad_request`,
+  `field` `client_ref`). axross sends one with every send (a UUID).
+- **A send asked for again.** A `sms.send` whose `client_ref` the
+  companion accepted within the last hour (from any session, while the
+  service runs) is **not sent again**: the answer is the first send's
+  result, with `"duplicate": true`. It does not count against the rate
+  limits, and the first send's events are not sent again (the client asks
+  `sms.status`). The parameters of the second request are checked, but not
+  compared with the first's. A send that was refused (`rate_limited`,
+  `no_subscription`, ...) was not accepted: its `client_ref` may come
+  again.
 - **Rate limit** (all sessions together, counted per recipient): at most
   **20** messages in any 60 s and **100** in any hour. A request that would
   go over is refused whole with `rate_limited` and `retry_after_ms`.
@@ -332,9 +412,9 @@ first; the companion does not ask again.
   app) and then asks the phone's user; that shows as a late `sms.sent` or
   as `sms.failed` with `reason: "limit_exceeded"`.
 
-Result: `{"send_id": 3, "recipients": [{"index": 0, "address": "+15555215554", "parts": 1}]}`
-(the addresses as normalized). Then, **to this session only**, per
-recipient:
+Result: `{"send_id": 3, "recipients": [{"index": 0, "address": "+15555215554", "parts": 1}], "client_ref": "6f1c...", "duplicate": false}`
+(the addresses as normalized; `client_ref` only when the request had one).
+Then, **to this session only** (for a duplicate: none), per recipient:
 
 - `sms.sent` `{send_id, index, address}` when every part was handed to the
   network;
@@ -352,10 +432,18 @@ messages in the "sent" box; when it is, the companion stores them.
 
 ### `sms.status`
 
-`{send_id}` → `{"send_id": 3, "recipients": [{"index": 0, "address": "...", "state": "sent", "reason": null}]}`;
-`state` one of `sending`, `sent`, `failed`, `delivered`,
-`delivery_failed`. Sends are remembered for an hour (for a client that
-reconnected and missed events); older: `not_found`.
+`{send_id}` or `{client_ref}` (exactly one: both is `bad_request` with
+`field` `client_ref`, neither `bad_request` with `field` `send_id`) →
+`{"send_id": 3, "recipients": [{"index": 0, "address": "...", "state": "sent", "reason": null}], "client_ref": "6f1c..."}`
+(`client_ref` when the send had one); `state` one of `sending`, `sent`,
+`failed`, `delivered`, `delivery_failed`. Sends are remembered for an hour
+(for a client that reconnected and missed events); older: `not_found`.
+
+By `client_ref`, `not_found` means that the companion never got that send:
+it was not sent - as far as this run of the service knows. The service
+forgets its sends when it stops (five minutes after the last client, or
+when Android stops it); a client that cannot be sure the service ran on
+since the send should say "unknown" rather than "not sent".
 
 ### `mms.parts` (needs READ_SMS)
 
@@ -369,7 +457,7 @@ Over 64 MiB: `too_large`.
 
 ### `mms.send`
 
-Not in version 1 (`not_implemented`). Building an M-Send.req PDU and
+Not in this version (`not_implemented`). Building an M-Send.req PDU and
 handing it to `SmsManager.sendMultimediaMessage` is planned; the request
 will take its attachments as client blobs (section 2).
 
@@ -399,7 +487,7 @@ export, nothing piles up on the phone.
 
 **The backup file** (what axross writes; the companion only streams): JSON
 Lines, UTF-8. Line 1:
-`{"format": "axross-sms-backup", "version": 1, "created": <ms>, "device": {...hello's android...}, "app_version": "0.1.0"}`;
+`{"format": "axross-sms-backup", "version": 1, "created": <ms>, "device": {...hello's android...}, "app_version": "0.1.1"}`;
 then one Message object per line, exactly as `backup.items` carries them,
 MMS part data base64 in `"data": {"base64": "...", "mime": "..."}` instead
 of a blob reference. Files with mode 0600.
@@ -418,7 +506,7 @@ of a blob reference. Files with mode 0600.
    app), `expired` (no answer within 5 minutes).
 2. `backup.restore.chunk` `{restore_id, items: [Message...]}` (at most 500
    items; only `kind: "sms"` - MMS items are counted as `rejected` in
-   version 1) → `{"inserted": n, "skipped": n, "rejected": n}`. `skipped`:
+   this version) → `{"inserted": n, "skipped": n, "rejected": n}`. `skipped`:
    already on the phone (same address, date, box and body). Only after
    `approved`, and only while the companion is still the default
    (`not_default_sms_app` otherwise).
@@ -444,7 +532,7 @@ One restore at a time on the phone (`busy`).
 `session.closing` reasons: `service_stopping`, `fgs_timeout` (Android 15+
 ended the service's daily time), `protocol_error`, `slow_reader` (the client
 did not read for 60 s while frames waited), `too_many_sessions`,
-`handshake_timeout`.
+`handshake_timeout` (no successful `auth` within 10 s of the connection).
 
 `message.received` comes from a content observer on the SMS/MMS store
 (started by `SMS_RECEIVED` too), so it works whether or not the companion
@@ -457,7 +545,7 @@ was subscribed, each once.
 |---|---|
 | install | `adb install -r axross-android-companion-<v>.apk` (checksum checked first; an install by ADB allows SMS permissions to be granted) |
 | grant | `adb shell pm grant io.github.c0decave.axross.companion android.permission.<P>` for READ_SMS, SEND_SMS, RECEIVE_SMS, READ_CONTACTS, READ_PHONE_STATE, POST_NOTIFICATIONS (13+) |
-| start | `adb shell am start-foreground-service -n io.github.c0decave.axross.companion/.CompanionService` (Android 8+); the service is exported only to holders of `android.permission.DUMP`, which the shell has and apps do not |
+| start | `adb shell am start-foreground-service -n io.github.c0decave.axross.companion/io.github.c0decave.axross.companion.CompanionService --es token <64 hex>` (Android 8+); the service is exported only to holders of `android.permission.DUMP`, which the shell has and apps do not. Also when it runs already: the start gives it the token (section 4) |
 | connect | `adb forward tcp:0 localabstract:axross-companion`, then TCP to the port adb printed |
 | open the app | `adb shell am start -n io.github.c0decave.axross.companion/.MainActivity` (when a grant failed: the user grants there) |
 
@@ -467,8 +555,12 @@ the release's names, so the component is
 `io.github.c0decave.axross.companion.debug/io.github.c0decave.axross.companion.CompanionService`.
 
 Where Android refuses the service's start from the shell, `am start -n
-<package>/io.github.c0decave.axross.companion.MainActivity --ez listen true`
-starts it from the app's screen.
+<package>/io.github.c0decave.axross.companion.MainActivity --ez listen true
+--es token <64 hex>` starts it from the app's screen, which hands the token
+to the service. (The activity is the launcher's, so any app can start it
+too, with tokens of its own: that tells it nothing and lets it connect to
+nothing, but eight of them push the client's token out. The client then
+gets `unknown_token`, gives its token again and retries once.)
 
 Which permissions need the phone's user (see README, "Permissions"):
 all six can be granted by `pm grant` when the app was installed by ADB;
@@ -481,5 +573,7 @@ the phone.
 
 `protocol` is an integer. Additions that old clients can ignore (new
 fields, new methods, new events, new error codes, new capabilities) keep
-the version; anything else raises it. A client should treat an unknown
+the version; anything else raises it. Version 2 raised it because the
+handshake changed (a version-1 client cannot open a session with a
+version-2 companion: it gets `unsupported_protocol`). A client should treat an unknown
 error code as `internal` and an unknown `box`/`status`/`reason` as `other`.
