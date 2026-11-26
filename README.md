@@ -7,9 +7,9 @@ do over ADB: **read** SMS, MMS and contacts reliably, **send** SMS, and
 report new messages as they arrive. axross's Messages window talks to it
 through `adb forward` - nothing else can.
 
-**Status: 0.1.0, unreleased.** It has never run on a phone; the first
-builds and the first emulator runs happen in this repository's CI (see
-[What is verified](#what-is-verified)).
+**Status: 0.1.0, a pre-release.** CI builds it, tests it on the JVM and
+runs it in emulators (Android 14 and 8.0); it has not yet run on a real
+phone (see [What is verified](#what-is-verified)).
 
 - Java only, no library in the APK, minSdk 26 (Android 8.0), targetSdk 36.
 - Application id `io.github.c0decave.axross.companion` (CI's debug builds:
@@ -171,29 +171,33 @@ chain"). The APK itself contains only this repository's classes.
 
 ## What is verified
 
-Checked where this was written (no Android SDK, no emulator, no phone):
+In CI (first green run 45792356217; with Gradle's checksums enforced
+45803878703), on every push:
 
-- the protocol package (framing, JSON, session, checks, rate limit, peer
-  rule, cursor order, send tracking) compiled with javac 17 and ECJ; its
-  **42 JVM unit tests pass** on JDK 17, including every shared fixture
-  (`protocol/fixtures`: 17 frame cases, 86 request cases, 10 sessions);
-- the reference client (`scripts/ci/companion_client.py`) ran its whole
-  smoke scenario against the Java session code over TCP (with a fake phone
-  behind it);
-- the Android code type-checks against the Android 16 (API 36) framework
-  classes (Robolectric's android-all jar, with ECJ; R and BuildConfig
-  stood in for);
-- the Gradle build (AGP 8.13.2, Gradle 8.14.6) configures and creates its
-  tasks (against a stand-in SDK: nothing was compiled or packaged by it);
-- `check_pins.py`, `check_protocol.py`, `check_manifest.py` pass; the
-  workflows are valid YAML; the actions' SHAs are their tags' commits.
+- the JVM unit tests (42, including every shared fixture), the debug APK,
+  lint (one finding: OldTargetApi - targetSdk 36 is the highest the Android
+  Gradle Plugin 8.13 supports), the APK's permissions (no network) and its
+  merged manifest's rules, Gradle's dependencies by SHA-256;
+- in emulators, Android 14 (required) and Android 8.0: install, `pm grant`
+  of every permission, `am start-foreground-service` from the shell, the
+  connection through `adb forward` from uid 2000, hello, status, SIMs,
+  contacts, threads, the refusals (too many recipients, bad numbers, empty
+  text, `mms.send`, delete and mark read without the SMS role), a request
+  before hello and a broken frame on other sessions, an SMS to the
+  emulator's own number with its `sms.sent` and `sms.status`, an incoming
+  SMS (from the emulator's console) as `message.received`, the sent SMS in
+  a thread, `messages.search`, `message.get`, a streamed `backup.export`;
+  afterwards the process alive, no crash, and neither the number nor the
+  text in the app's log.
 
-Only CI or a device can show: that the resources and the APK build; lint's
-verdict (API levels); that the service starts from the shell on Android 14
-and later (`am start-foreground-service`, the FGS rules); that adbd's peer
-credentials are uid 2000 on real phones; the Telephony provider's answers on
-real phones and vendors' providers (threads, MMS parts); SmsManager's
-callbacks; the default-SMS-app flow; Android 15's dataSync time limit.
+Seen in the emulators and not failures: no delivery report (Android 8.0's
+emulator sends none within 20 s), and Android 14's emulator does not loop an
+SMS to its own number back to its inbox (the injected SMS covers
+`message.received`).
+
+Not verified yet: real phones and vendors' message stores (threads, MMS
+parts), MMS at all, the default-SMS-app flow (restore, delete, mark read),
+dual SIM, and Android 15+'s dataSync time limit.
 
 ## Licence
 
