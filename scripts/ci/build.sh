@@ -11,9 +11,11 @@
 # - while android/gradle/verification-metadata.xml is not committed: the file
 #   Gradle would write for this build (tests, debug and release APK, lint),
 #   to android/gradle/ (uploaded as an artifact) and - because artifacts and
-#   logs may be out of reach - gzip + base64 in notice annotations
-#   ("verification-metadata i/n"), which `gh api .../check-runs/<job>/annotations`
-#   reads. Decode: concatenate the parts in order, base64 -d | gunzip.
+#   logs may be out of reach - xz + base64 in notice annotations
+#   ("verification-metadata i/n"; GitHub cuts an annotation at 4096
+#   characters and keeps 10 a step), which
+#   `gh api .../check-runs/<job>/annotations` reads. Decode: concatenate the
+#   parts in order, base64 -d | xz -d.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -88,9 +90,12 @@ if [ ! -f "$METADATA" ]; then
     "${GRADLE[@]}" --write-verification-metadata sha256 testDebugUnitTest assembleDebug assembleRelease lintDebug
     test -s "$METADATA"
     echo "verification metadata: $(wc -c < "$METADATA") bytes, sha256 $(sha256sum "$METADATA" | cut -d' ' -f1)"
-    ENCODED=$(gzip -9n < "$METADATA" | base64 -w0)
-    CHUNK=30000
+    ENCODED=$(xz -9e < "$METADATA" | base64 -w0)
+    CHUNK=4000
     PARTS=$(( (${#ENCODED} + CHUNK - 1) / CHUNK ))
+    if [ "$PARTS" -gt 10 ]; then
+        echo "::warning title=verification-metadata::$PARTS parts are more than the 10 notices a step keeps"
+    fi
     for ((i = 0; i < PARTS; i++)); do
         echo "::notice title=verification-metadata $((i + 1))/$PARTS sha256 $(sha256sum "$METADATA" | cut -c1-16)::${ENCODED:$((i * CHUNK)):$CHUNK}"
     done

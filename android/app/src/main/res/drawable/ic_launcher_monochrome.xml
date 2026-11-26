@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The themed icon (Android 13+): the bubble in one colour, the lines cut out. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M32,34h44a6,6 0,0 1,6 6v22a6,6 0,0 1,-6 6H50l-10,9v-9h-8a6,6 0,0 1,-6 -6V40a6,6 0,0 1,6 -6zM38,46v4h32v-4zM38,54v4h22v-4z" />
+</vector>

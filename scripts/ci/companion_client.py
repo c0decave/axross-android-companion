@@ -16,8 +16,10 @@ import argparse
 import json
 import os
 import secrets
+import shlex
 import socket
 import struct
+import subprocess
 import sys
 import time
 
@@ -322,7 +324,29 @@ class Smoke:
             ev = conn.wait_event(lambda e: e["event"] == "message.received" and e["data"]["message"].get("body") == text, timeout=a.receive_timeout)
             self.check(ev["data"]["message"]["box"] == "inbox", "message.received for the SMS sent to ourselves")
         except TimeoutError:
-            self.warn(f"no message.received within {a.receive_timeout} s (the SMS to ourselves did not come back)")
+            # (is it in the store? then the companion missed it; if not, it never came back)
+            found = conn.call("messages.search", {"query": token})["messages"]
+            boxes = sorted(m.get("box") for m in found if m.get("body") == text)
+            self.report["loopback_boxes"] = boxes
+            self.warn(f"no message.received within {a.receive_timeout} s for the SMS to ourselves "
+                      f"(in the store: {boxes or 'nothing'})")
+
+        # an incoming SMS from the emulator's console, while subscribed
+        if a.inject:
+            itext = f"axross companion smoke inject {token}"
+            cmd = [part.replace("{text}", itext) for part in shlex.split(a.inject)]
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            self.check(done.returncode == 0, f"an incoming SMS injected ({cmd[0]} exit {done.returncode})")
+            try:
+                ev = conn.wait_event(lambda e: e["event"] == "message.received" and e["data"]["message"].get("body") == itext,
+                                     timeout=a.receive_timeout)
+                m = ev["data"]["message"]
+                self.check(m["box"] == "inbox" and m["kind"] == "sms", "message.received for the injected SMS")
+            except TimeoutError:
+                found = conn.call("messages.search", {"query": "inject " + token})["messages"]
+                self.report["inject_boxes"] = sorted(m.get("box") for m in found)
+                self.check(False, f"message.received for the injected SMS within {a.receive_timeout} s "
+                                  f"(in the store: {self.report['inject_boxes'] or 'nothing'})")
 
         # it is in the store: threads, messages, search
         threads = conn.call("threads.list", {"limit": 50})
@@ -359,6 +383,7 @@ class Smoke:
             self.check(items == exp["sms_count"] + exp["mms_count"], f"backup.export streamed {items} items")
         except TimeoutError:
             self.check(False, "backup.export ends within 60 s")
+        self.report["messages_changed_events"] = sum(1 for e in conn.events if e["event"] == "messages.changed")
         conn.close()
 
         self.report["failures"] = self.failures
@@ -383,6 +408,7 @@ def main():
     s.add_argument("--out", default=None)
     s.add_argument("--sent-timeout", type=int, default=90)
     s.add_argument("--receive-timeout", type=int, default=60)
+    s.add_argument("--inject", default=None, help="a command that makes an SMS arrive; {text} is replaced by its text")
     s.add_argument("--connect-timeout", type=int, default=60, help="seconds to wait for the companion to listen")
     args = parser.parse_args()
 

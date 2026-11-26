@@ -34,7 +34,7 @@ app_pid() { adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1
 # An annotation (readable through the API when logs and artifacts are not).
 annotate() { # level title file-or-text
     local msg
-    if [ -f "$3" ]; then msg=$(tail -c 30000 "$3"); else msg=$3; fi
+    if [ -f "$3" ]; then msg=$(tail -c 3900 "$3"); else msg=$3; fi
     msg=${msg//'%'/'%25'}
     msg=${msg//$'\r'/}
     msg=${msg//$'\n'/'%0A'}
@@ -102,7 +102,11 @@ PID=$(app_pid)
 say "listening (pid $PID)"
 
 adb forward "tcp:$PORT" localabstract:axross-companion || { say "adb forward failed"; finish; exit 1; }
-python3 -I "$HERE/ci/companion_client.py" --port "$PORT" smoke --sms-to "$NUMBER" --out "$OUT"
+# (--inject: an incoming SMS from the emulator's console while the client is
+# subscribed - the message.received check that does not depend on the
+# modem looping our own send back)
+python3 -I "$HERE/ci/companion_client.py" --port "$PORT" smoke --sms-to "$NUMBER" --out "$OUT" \
+    --inject "adb emu sms send 15550001234 {text}"
 result=$?
 
 if [ "$(app_pid)" != "$PID" ]; then
@@ -114,7 +118,7 @@ if adb logcat -d 2>/dev/null | grep -A5 "FATAL EXCEPTION" | grep -q "$PACKAGE"; 
     result=1
 fi
 # privacy: no message text and no number in the app's own lines
-if app_log | grep -q -e "axross companion smoke" -e "$NUMBER" -e "${NUMBER#1}"; then
+if app_log | grep -q -e "axross companion smoke" -e "$NUMBER" -e "${NUMBER#1}" -e 15550001234; then
     say "FAIL the app's log carries the text or the number"
     result=1
 fi

@@ -3,6 +3,7 @@ package io.github.c0decave.axross.companion;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.provider.Telephony;
 
 /**
  * WAP_PUSH_DELIVER (an MMS notification): reaches the companion only while
@@ -14,6 +15,9 @@ import android.content.Intent;
 public final class MmsDeliverReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
+        if (!Telephony.Sms.Intents.WAP_PUSH_DELIVER_ACTION.equals(intent.getAction())) {
+            return;
+        }
         L.w("an MMS notification arrived while the companion is the default SMS app; it cannot download MMS");
         Notes.channels(context);
         Notes.giveDefaultBack(context, R.string.note_default_mms_arrived);
