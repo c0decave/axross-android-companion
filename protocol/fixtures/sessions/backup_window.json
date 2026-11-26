@@ -1,0 +1,474 @@
+{
+  "name": "backup with window",
+  "description": "An export with window 2: at most two backup.items are out unacknowledged. The companion sends seq 0 and 1, then waits; meanwhile it reads and answers (ping, status). backup.ack seq 0 is answered {} and lets seq 2 go; backup.done follows at once (it is not counted). An ack after backup.done is still answered.",
+  "phone": {
+    "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
+    "hello": {
+      "revision": 1,
+      "app": "axross-android-companion",
+      "app_version": "0.1.2",
+      "app_version_code": 102,
+      "package": "io.github.c0decave.axross.companion",
+      "android": {
+        "sdk_int": 34,
+        "release": "14",
+        "manufacturer": "Google",
+        "model": "sdk_gphone64_x86_64"
+      },
+      "capabilities": [
+        "contacts",
+        "contacts.photo",
+        "threads",
+        "messages",
+        "messages.search",
+        "message.mark_read",
+        "message.delete",
+        "sms.send",
+        "sms.status",
+        "mms.parts",
+        "mms.part_data",
+        "subscribe",
+        "subscriptions",
+        "backup.export",
+        "backup.restore",
+        "sms.refs",
+        "backup.ack"
+      ],
+      "limits": {
+        "max_frame": 16777216,
+        "max_request_json": 4194304,
+        "max_blob_in": 8388608,
+        "max_blobs_pending": 33554432,
+        "max_blob_out": 67108864,
+        "max_in_flight": 8,
+        "max_recipients": 10,
+        "max_text_chars": 5000,
+        "max_parts": 30,
+        "sends_per_minute": 20,
+        "sends_per_hour": 100,
+        "max_page": 500
+      },
+      "default_sms_app": false,
+      "permissions": {
+        "READ_SMS": true,
+        "SEND_SMS": true,
+        "RECEIVE_SMS": true,
+        "READ_CONTACTS": true,
+        "READ_PHONE_STATE": true,
+        "POST_NOTIFICATIONS": true
+      },
+      "sends": {
+        "store": "6feebacd6df89e21d7171200838883d5",
+        "keep_ms": 86400000
+      }
+    },
+    "answers": {
+      "backup.export": [
+        {
+          "result": {
+            "export_id": 1,
+            "sms_count": 3,
+            "mms_count": 0
+          },
+          "events": [
+            {
+              "event": "backup.items",
+              "data": {
+                "export_id": 1,
+                "seq": 0,
+                "items": [
+                  {
+                    "kind": "sms",
+                    "id": 200,
+                    "thread_id": 5,
+                    "address": "+15555215554",
+                    "date": 1764150000000,
+                    "date_sent": 0,
+                    "box": "inbox",
+                    "read": true,
+                    "seen": true,
+                    "status": "none",
+                    "body": "one",
+                    "sub_id": 1,
+                    "locked": false,
+                    "error_code": 0
+                  }
+                ]
+              }
+            },
+            {
+              "event": "backup.items",
+              "data": {
+                "export_id": 1,
+                "seq": 1,
+                "items": [
+                  {
+                    "kind": "sms",
+                    "id": 210,
+                    "thread_id": 5,
+                    "address": "+15555215554",
+                    "date": 1764150600000,
+                    "date_sent": 0,
+                    "box": "inbox",
+                    "read": true,
+                    "seen": true,
+                    "status": "none",
+                    "body": "two",
+                    "sub_id": 1,
+                    "locked": false,
+                    "error_code": 0
+                  }
+                ]
+              }
+            },
+            {
+              "event": "backup.items",
+              "data": {
+                "export_id": 1,
+                "seq": 2,
+                "items": [
+                  {
+                    "kind": "sms",
+                    "id": 220,
+                    "thread_id": 5,
+                    "address": "+15555215554",
+                    "date": 1764151200000,
+                    "date_sent": 0,
+                    "box": "inbox",
+                    "read": true,
+                    "seen": true,
+                    "status": "none",
+                    "body": "three",
+                    "sub_id": 1,
+                    "locked": false,
+                    "error_code": 0
+                  }
+                ]
+              }
+            },
+            {
+              "event": "backup.done",
+              "data": {
+                "export_id": 1,
+                "sms": 3,
+                "mms": 0,
+                "blobs": 0
+              }
+            }
+          ]
+        }
+      ],
+      "status": [
+        {
+          "result": {
+            "default_sms_app": false,
+            "default_sms_package": "com.google.android.apps.messaging",
+            "permissions": {
+              "READ_SMS": true,
+              "SEND_SMS": true,
+              "RECEIVE_SMS": true,
+              "READ_CONTACTS": true,
+              "READ_PHONE_STATE": true,
+              "POST_NOTIFICATIONS": true
+            },
+            "subscribed": [],
+            "sessions": 1
+          }
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "client": {
+        "id": 1,
+        "method": "hello",
+        "params": {
+          "protocols": [
+            2
+          ],
+          "client": "axross",
+          "client_version": "0.15.186",
+          "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+          "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "protocol": 2,
+          "revision": 1,
+          "app": "axross-android-companion",
+          "app_version": "0.1.2",
+          "app_version_code": 102,
+          "package": "io.github.c0decave.axross.companion",
+          "android": {
+            "sdk_int": 34,
+            "release": "14",
+            "manufacturer": "Google",
+            "model": "sdk_gphone64_x86_64"
+          },
+          "capabilities": [
+            "contacts",
+            "contacts.photo",
+            "threads",
+            "messages",
+            "messages.search",
+            "message.mark_read",
+            "message.delete",
+            "sms.send",
+            "sms.status",
+            "mms.parts",
+            "mms.part_data",
+            "subscribe",
+            "subscriptions",
+            "backup.export",
+            "backup.restore",
+            "sms.refs",
+            "backup.ack"
+          ],
+          "limits": {
+            "max_frame": 16777216,
+            "max_request_json": 4194304,
+            "max_blob_in": 8388608,
+            "max_blobs_pending": 33554432,
+            "max_blob_out": 67108864,
+            "max_in_flight": 8,
+            "max_recipients": 10,
+            "max_text_chars": 5000,
+            "max_parts": 30,
+            "sends_per_minute": 20,
+            "sends_per_hour": 100,
+            "max_page": 500
+          },
+          "default_sms_app": false,
+          "permissions": {
+            "READ_SMS": true,
+            "SEND_SMS": true,
+            "RECEIVE_SMS": true,
+            "READ_CONTACTS": true,
+            "READ_PHONE_STATE": true,
+            "POST_NOTIFICATIONS": true
+          },
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000
+          },
+          "auth": {
+            "companion_nonce": "*",
+            "proof": "*"
+          }
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 2,
+        "method": "auth",
+        "params": {
+          "proof": "*"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 2,
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "client": {
+        "id": 3,
+        "method": "backup.export",
+        "params": {
+          "include_mms": false,
+          "window": 2
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 3,
+        "ok": true,
+        "result": "=phone"
+      }
+    },
+    {
+      "companion": {
+        "event": "backup.items",
+        "data": {
+          "export_id": 1,
+          "seq": 0,
+          "items": [
+            {
+              "kind": "sms",
+              "id": 200,
+              "thread_id": 5,
+              "address": "+15555215554",
+              "date": 1764150000000,
+              "date_sent": 0,
+              "box": "inbox",
+              "read": true,
+              "seen": true,
+              "status": "none",
+              "body": "one",
+              "sub_id": 1,
+              "locked": false,
+              "error_code": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "companion": {
+        "event": "backup.items",
+        "data": {
+          "export_id": 1,
+          "seq": 1,
+          "items": [
+            {
+              "kind": "sms",
+              "id": 210,
+              "thread_id": 5,
+              "address": "+15555215554",
+              "date": 1764150600000,
+              "date_sent": 0,
+              "box": "inbox",
+              "read": true,
+              "seen": true,
+              "status": "none",
+              "body": "two",
+              "sub_id": 1,
+              "locked": false,
+              "error_code": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 4,
+        "method": "ping",
+        "params": {}
+      }
+    },
+    {
+      "companion": {
+        "id": 4,
+        "ok": true,
+        "result": {
+          "time": "*"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 5,
+        "method": "status",
+        "params": {}
+      }
+    },
+    {
+      "companion": {
+        "id": 5,
+        "ok": true,
+        "result": "=phone"
+      }
+    },
+    {
+      "client": {
+        "id": 6,
+        "method": "backup.ack",
+        "params": {
+          "export_id": 1,
+          "seq": 0
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 6,
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "companion": {
+        "event": "backup.items",
+        "data": {
+          "export_id": 1,
+          "seq": 2,
+          "items": [
+            {
+              "kind": "sms",
+              "id": 220,
+              "thread_id": 5,
+              "address": "+15555215554",
+              "date": 1764151200000,
+              "date_sent": 0,
+              "box": "inbox",
+              "read": true,
+              "seen": true,
+              "status": "none",
+              "body": "three",
+              "sub_id": 1,
+              "locked": false,
+              "error_code": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "companion": {
+        "event": "backup.done",
+        "data": {
+          "export_id": 1,
+          "sms": 3,
+          "mms": 0,
+          "blobs": 0
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 7,
+        "method": "backup.ack",
+        "params": {
+          "export_id": 1,
+          "seq": 2
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 7,
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "client": {
+        "id": 8,
+        "method": "backup.ack",
+        "params": {
+          "export_id": 1,
+          "seq": 1
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 8,
+        "ok": true,
+        "result": {}
+      }
+    }
+  ]
+}

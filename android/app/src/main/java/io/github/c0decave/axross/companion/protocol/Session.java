@@ -52,6 +52,15 @@ public final class Session {
         }
 
         /**
+         * A request has been parsed and is about to be queued for
+         * {@link #handle} (on the reader thread, in the order the requests
+         * came: what is noted here is there for every later request). Must
+         * be quick.
+         */
+        default void arrived(Session session, Call call) {
+        }
+
+        /**
          * Answers one request (on an executor thread). It must answer
          * through {@code call} before it returns; it may go on afterwards
          * with events (an export does). A {@link RequestException} becomes
@@ -77,6 +86,9 @@ public final class Session {
         /** What {@link Requests#parse} made of the parameters. */
         public final Object value;
         private boolean answered;
+        private volatile Object attachment;
+        private final List<Runnable> whenAnswered = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private volatile RequestException failure;
 
         Call(long id, String method, Object value) {
             this.id = id;
@@ -103,6 +115,7 @@ public final class Session {
         }
 
         public void fail(RequestException e) {
+            failure = e;
             if (!ErrorCode.NOT_DEFAULT_SMS_APP.equals(e.code) && !ErrorCode.PERMISSION_DENIED.equals(e.code)) {
                 log.info("session " + number + ": " + method + " -> " + e.code);
             }
@@ -111,6 +124,25 @@ public final class Session {
 
         public synchronized boolean answered() {
             return answered;
+        }
+
+        /** The handler's own state for this request (see {@link Handler#arrived}). */
+        public void attach(Object o) {
+            attachment = o;
+        }
+
+        public Object attachment() {
+            return attachment;
+        }
+
+        /** {@code r} runs once the answer is queued (whether ok or an error). */
+        public void whenAnswered(Runnable r) {
+            whenAnswered.add(r);
+        }
+
+        /** The error this request was answered with, or null. */
+        public RequestException failure() {
+            return failure;
         }
 
         private void answer(List<byte[]> before, byte[] frame) {
@@ -126,6 +158,13 @@ public final class Session {
                 inFlight--;
             }
             outbox.put(group, true);
+            for (Runnable after : whenAnswered) {
+                try {
+                    after.run();
+                } catch (RuntimeException e) {
+                    log.warn("session " + number + ": " + method + ": after the answer: " + e.getClass().getSimpleName());
+                }
+            }
         }
     }
 
@@ -343,6 +382,11 @@ public final class Session {
             inFlight++;
         }
         final Call call = new Call(id, method, value);
+        try {
+            handler.arrived(this, call);
+        } catch (RuntimeException e) {
+            log.warn("session " + number + ": " + method + ": arrived failed: " + e.getClass().getSimpleName());
+        }
         try {
             executor.execute(new Runnable() {
                 @Override

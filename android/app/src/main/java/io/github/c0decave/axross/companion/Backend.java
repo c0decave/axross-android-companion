@@ -9,6 +9,7 @@ import io.github.c0decave.axross.companion.protocol.MessageOrder;
 import io.github.c0decave.axross.companion.protocol.Protocol;
 import io.github.c0decave.axross.companion.protocol.RequestException;
 import io.github.c0decave.axross.companion.protocol.Requests;
+import io.github.c0decave.axross.companion.protocol.SendTracker;
 import io.github.c0decave.axross.companion.protocol.Session;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +33,7 @@ final class Backend implements Session.Handler {
         this.service = service;
         this.contacts = new Contacts(service);
         this.store = new SmsStore(service, contacts);
-        this.sender = new Sender(service, this);
+        this.sender = new Sender(service);
         this.watcher = new Watcher(service, this);
         this.exporter = new Exporter(service, store);
         this.restore = new Restore(service, this);
@@ -94,6 +95,7 @@ final class Backend implements Session.Handler {
     public Map<String, Object> hello(Session session, Requests.Hello hello) {
         L.i("session " + session.number + ": hello from a client");
         return Json.obj(
+                "revision", (long) Protocol.REVISION,
                 "app", Protocol.APP,
                 "app_version", BuildConfig.VERSION_NAME,
                 "app_version_code", (long) BuildConfig.VERSION_CODE,
@@ -103,7 +105,16 @@ final class Backend implements Session.Handler {
                 "capabilities", new ArrayList<Object>(Protocol.CAPABILITIES),
                 "limits", Protocol.limits(),
                 "default_sms_app", Perms.isDefaultSmsApp(service),
-                "permissions", Perms.state(service));
+                "permissions", Perms.state(service),
+                "sends", Protocol.sends(Sends.get(service).store.id()));
+    }
+
+    /** sms.send's client_ref is "checking" from the moment the request is read. */
+    @Override
+    public void arrived(Session session, Session.Call call) {
+        if ("sms.send".equals(call.method)) {
+            sender.arrived(call, (Requests.SmsSend) call.value);
+        }
     }
 
     /** The notification names the client once it has proved itself. */
@@ -114,6 +125,7 @@ final class Backend implements Session.Handler {
 
     @Override
     public void closed(Session session) {
+        exporter.closed(session);
         service.sessionClosed(session);
     }
 
@@ -178,9 +190,10 @@ final class Backend implements Session.Handler {
                 return;
             case "sms.status": {
                 Requests.SendQuery q = (Requests.SendQuery) v;
-                Map<String, Object> st = q.clientRef != null ? sender.tracker.status(q.clientRef) : sender.tracker.status(q.sendId);
+                SendTracker tracker = Sends.get(service).tracker;
+                Map<String, Object> st = q.clientRef != null ? tracker.status(q.clientRef) : tracker.status(q.sendId);
                 if (st == null) {
-                    throw new RequestException(ErrorCode.NOT_FOUND, "no such send (or older than an hour)");
+                    throw new RequestException(ErrorCode.NOT_FOUND, "no such send (never accepted, or older than keep_ms)");
                 }
                 call.ok(st);
                 return;
@@ -204,6 +217,9 @@ final class Backend implements Session.Handler {
                 return;
             case "backup.cancel":
                 exporter.cancel(call, (Long) v);
+                return;
+            case "backup.ack":
+                exporter.ack(call, (Requests.Ack) v);
                 return;
             case "backup.restore.begin":
                 restore.begin(call, (Requests.RestoreBegin) v);

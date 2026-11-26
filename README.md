@@ -27,10 +27,10 @@ phone (see [What is verified](#what-is-verified)).
 | SIMs | the active subscriptions, which one is the default for SMS |
 | Conversations | threads with contact names, last message, unread count; a thread's SMS and MMS, newest first, paged; search; one message |
 | MMS | the parts of a message and their data (pictures, audio, text, vCards) |
-| Sending | SMS to 1..10 recipients, on a chosen SIM, multipart; `sms.sent`, `sms.failed`, `sms.delivered` events |
+| Sending | SMS to 1..10 recipients, on a chosen SIM, multipart; `sms.sent`, `sms.failed`, `sms.delivered` events; each send kept for a day in a send store (numbers and states, no text), so that `sms.status` answers and a send asked for again is not sent twice - also after the service or the phone restarted |
 | New messages | `message.received` (and `messages.changed`) while axross is subscribed - also when another app is the default SMS app |
 | Mark read, delete | only as the default SMS app (Android ignores other apps' writes): `not_default_sms_app` otherwise |
-| Backup | export of everything, streamed; restore of SMS, after the phone's user agreed on the phone, as the default SMS app |
+| Backup | export of everything, streamed (optionally paced by the client's acks); restore of SMS, after the phone's user agreed on the phone, as the default SMS app |
 
 Later: sending MMS (`mms.send` answers `not_implemented`), restoring MMS,
 downloading MMS while the companion is the default SMS app, editing contacts.
@@ -38,7 +38,7 @@ downloading MMS while the companion is the default SMS app, editing contacts.
 ## Install and connect (what axross does)
 
 ```sh
-adb install -r axross-android-companion-0.1.1.apk
+adb install -r axross-android-companion-0.1.2.apk
 for p in READ_SMS SEND_SMS RECEIVE_SMS READ_CONTACTS READ_PHONE_STATE POST_NOTIFICATIONS; do
   adb shell pm grant io.github.c0decave.axross.companion android.permission.$p
 done
@@ -51,7 +51,15 @@ python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN call threa
 The token (32 random bytes, new for each start of axross) is how the
 client knows that it talks to the companion and not to another app on the
 socket's name: the companion proves in the handshake that it was given it
-(docs/PROTOCOL.md, section 4).
+(docs/PROTOCOL.md, section 4). Where Android refuses
+`am start-foreground-service` from the shell, the fallback is
+
+```sh
+adb shell am start -n io.github.c0decave.axross.companion/io.github.c0decave.axross.companion.ShellStartActivity --es token $TOKEN
+```
+
+(an activity without a screen that only the shell may start; the app's own
+screen takes no token).
 
 The phone shows "axross is connected" while a client is attached; the
 service stops by itself five minutes after the last one left. Release
@@ -91,13 +99,15 @@ notification reaches only the default app) - keep that time short.
 
 No INTERNET permission (no network access at all); the socket is abstract
 and accepts only uid 2000 (shell/adbd) and 0 (root); nothing is exported
-but the launcher, the listening service (guarded by DUMP, which the shell
-has and apps do not) and the components Android requires of an SMS app
-(each guarded by a permission only the system holds); every send comes from
-a connected axross session, never from an intent; every request is checked
-(sizes, ids, recipients; at most 10 recipients, 20 messages a minute, 100
-an hour); no message text, number or name is logged. Details:
-[docs/SECURITY.md](docs/SECURITY.md).
+but the launcher (which takes no token), the listening service and its
+start activity (both guarded by DUMP, which the shell has and apps do not)
+and the components Android requires of an SMS app (each guarded by a
+permission only the system holds); every send comes from a connected axross
+session, never from an intent; every request is checked (sizes, ids,
+recipients; at most 10 recipients, 20 messages a minute, 100 an hour); no
+message text, number or name is logged. The one file the app keeps is its
+send store: for a day, the numbers and states of the SMS it sent, never the
+text, never in a backup. Details: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Build
 
@@ -170,9 +180,13 @@ attests the provenance and makes a **draft** release with the APK and
    the refusals, other sessions refused (before hello, a version-1 hello,
    an unknown token, a wrong proof, before auth, a broken frame), an SMS to
    the emulator's own number asked for twice with one `client_ref` (sent
-   once) and its `sms.sent`, eight more tokens pushing the first out; then
-   the process alive, no crash, and no text, number or token in the app's
-   log. Android 14 must pass; Android 8.0 is run and reported.
+   once) and its `sms.sent` (naming the `client_ref`), an export paced by
+   `backup.ack`, eight more tokens pushing the first out; then a restart of
+   the service in a new process (the same send store, the send still known,
+   its `client_ref` a duplicate), the fallback start through
+   `ShellStartActivity`, `MainActivity` refusing a token; then the process
+   alive, no crash, and no text, number or token in the app's log. Android
+   14 must pass; Android 8.0 is run and reported.
 
 Gradle's own dependencies (the Android Gradle Plugin's tree from Google's
 Maven repository, JUnit from Maven Central) are verified by SHA-256
@@ -184,8 +198,11 @@ chain"). The APK itself contains only this repository's classes.
 In CI (first green run 45792356217; with Gradle's checksums enforced
 45803878703; protocol 2: 45867913452), on every push:
 
-- the JVM unit tests (57, including every shared fixture, the proofs
-  computed from the fixtures' token), the debug APK, lint (one finding:
+- the JVM unit tests (81, including every shared fixture - the sends
+  through the real send store and tracker, the exports through the real
+  window - the proofs computed from the fixtures' token, the send store
+  across simulated restarts, crashes and corrupt files, an export waiting
+  for acks while a ping is answered), the debug APK, lint (one finding:
   OldTargetApi - targetSdk 36 is the highest the Android Gradle Plugin 8.13
   supports), the APK's permissions (no network) and its merged manifest's
   rules, Gradle's dependencies by SHA-256;

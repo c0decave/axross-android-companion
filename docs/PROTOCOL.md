@@ -23,7 +23,15 @@ things: the service is given a token by the shell and both sides prove in
 the handshake that they hold it (sections 4 and 9); `sms.send` takes a
 `client_ref`, and a send asked for again with the same `client_ref` is not
 sent again (section 7); `sms.status` can look a send up by its
-`client_ref`. A companion speaks one version only: 0.1.1 speaks 2.
+`client_ref`. A companion speaks one version only: 0.1.1 and 0.1.2 speak 2.
+
+Revision 1 of version 2 (companion 0.1.2) adds what a client of revision 0
+can ignore (section 10): the companion keeps its sends on disk, so that
+`sms.status` answers and a send asked for again is not sent again across
+restarts of the service, process deaths and reboots; `hello` names that
+store; `sms.status` says `pending` while a send is still checked; the
+`sms.*` events name the `client_ref`; and `backup.export` can be paced by
+the client (`window`, `backup.ack`).
 
 ## 1. Transport
 
@@ -156,15 +164,17 @@ connection, or the companion closes it (`handshake_timeout`).
 ```json
 {"id": 1, "ok": true, "result": {
   "protocol": 2,
+  "revision": 1,
   "app": "axross-android-companion",
-  "app_version": "0.1.1",
-  "app_version_code": 101,
+  "app_version": "0.1.2",
+  "app_version_code": 102,
   "package": "io.github.c0decave.axross.companion",
   "android": {"sdk_int": 34, "release": "14", "manufacturer": "Google", "model": "sdk_gphone64_x86_64"},
-  "capabilities": ["contacts", "contacts.photo", "threads", "messages", "messages.search", "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts", "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore"],
+  "capabilities": ["contacts", "contacts.photo", "threads", "messages", "messages.search", "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts", "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore", "sms.refs", "backup.ack"],
   "limits": {"max_frame": 16777216, "max_request_json": 4194304, "max_blob_in": 8388608, "max_blobs_pending": 33554432, "max_blob_out": 67108864, "max_in_flight": 8, "max_recipients": 10, "max_text_chars": 5000, "max_parts": 30, "sends_per_minute": 20, "sends_per_hour": 100, "max_page": 500},
   "default_sms_app": false,
   "permissions": {"READ_SMS": true, "SEND_SMS": true, "RECEIVE_SMS": true, "READ_CONTACTS": true, "READ_PHONE_STATE": true, "POST_NOTIFICATIONS": true},
+  "sends": {"store": "6feebacd6df89e21d7171200838883d5", "keep_ms": 86400000},
   "auth": {"companion_nonce": "<64 hex>", "proof": "<64 hex>"}
 }}
 ```
@@ -217,6 +227,19 @@ connection, or the companion closes it (`handshake_timeout`).
 - `permissions` and `default_sms_app` are the state at the time of the
   answer (`status` reads them again). Absent `POST_NOTIFICATIONS` below
   Android 13 is reported as `true` (no such permission there).
+- `revision` (since 0.1.2; absent means 0): the additions within version 2
+  this companion has (section 10). The capabilities `sms.refs` (the send
+  store below, `pending`, `client_ref` in the events) and `backup.ack` say
+  the same per feature.
+- `sends` (revision 1): the companion's **send store** (section 7,
+  `sms.send`). `store` is its id, 128 random bits as 32 lowercase hex
+  characters, made together with the store; `keep_ms` (86400000, a day) is
+  how long a send is kept after it was accepted. The id changes only when
+  the store is new, lost or unreadable: app data cleared, the app
+  uninstalled and installed again, a corrupt file. It stays the same across
+  runs of the service, process deaths and reboots. A client that sees
+  another `store` than before must treat what it knew of earlier sends as
+  unknown.
 
 ## 5. Errors
 
@@ -231,7 +254,7 @@ connection, or the companion closes it (`handshake_timeout`).
 | `not_implemented` | known, not in this version (`mms.send`; MMS in a restore) | |
 | `permission_denied` | the runtime permission it needs is not granted | `permission` |
 | `not_default_sms_app` | Android lets only the default SMS app write messages (delete, mark read, restore) | `default_sms_package` (may be null) |
-| `not_found` | no such message, thread, contact, part, send (by `send_id` or `client_ref`), export, restore | |
+| `not_found` | no such message, thread, contact, part, send (by `send_id` or `client_ref`; for `client_ref` see `sms.status`), export, restore | |
 | `too_many_recipients` | more than `limits.max_recipients` | `max` |
 | `too_large` | a text over `max_text_chars` or more than `max_parts` parts, a frame over `max_request_json`, a part over `max_blob_out` | `max` |
 | `rate_limited` | sending would exceed the send limits | `retry_after_ms` |
@@ -239,7 +262,7 @@ connection, or the companion closes it (`handshake_timeout`).
 | `busy` | too many requests in flight; a second export or restore at a time | |
 | `user_denied` | the phone's user said no (restore) | |
 | `cancelled` | an export was cancelled | |
-| `internal` | anything else (no details that could carry personal data) | |
+| `internal` | anything else (no details that could carry personal data); also a send that could not be written to the send store (it was not sent) | |
 
 ## 6. Objects
 
@@ -396,17 +419,39 @@ first; the companion does not ask again.
 - `client_ref`: optional; the client's name for this send, 1..64
   characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (malformed: `bad_request`,
   `field` `client_ref`). axross sends one with every send (a UUID).
-- **A send asked for again.** A `sms.send` whose `client_ref` the
-  companion accepted within the last hour (from any session, while the
-  service runs) is **not sent again**: the answer is the first send's
+- **The send store** (revision 1). Every send the companion *accepts* is
+  written to its send store, in the app's private files, **before** any
+  part of it is handed to Android: its `client_ref`, `send_id`, the
+  normalized recipients with their index and parts, the time of acceptance
+  and each recipient's state and reason - never the text. The write is
+  atomic (a temporary file, fsync, rename; the reports that follow go to a
+  journal, fsync'd line by line). If it fails, the answer is `internal` and
+  nothing is sent. The store is never in a backup and never moved to
+  another device. A send is kept for `keep_ms` (a day) after acceptance and
+  dropped at the latest an hour after that (the grace guards against a
+  phone clock that is set forward); at most 5000 sends are kept, the oldest
+  dropped first (the rate limit allows 2400 a day).
+- **A send asked for again.** A `sms.send` whose `client_ref` is in the
+  send store (accepted within `keep_ms`, from any session, in any run of
+  the service) is **not sent again**: the answer is the stored send's
   result, with `"duplicate": true`. It does not count against the rate
   limits, and the first send's events are not sent again (the client asks
   `sms.status`). The parameters of the second request are checked, but not
   compared with the first's. A send that was refused (`rate_limited`,
   `no_subscription`, ...) was not accepted: its `client_ref` may come
   again.
+- **While a send is checked** (revision 1). As soon as an `sms.send` with
+  a `client_ref` has been read and its parameters have passed the checks
+  above, the companion registers that `client_ref` (in memory) as being
+  checked - before the permission, the SIM, the division into parts and
+  the rate limit are looked at. `sms.status` then says `pending`. A second
+  `sms.send` with the same `client_ref` meanwhile waits for the first: it
+  is answered after the first, with the first's result and `"duplicate":
+  true`, or with the same error the first got. A refused send's
+  registration is dropped when its error is answered.
 - **Rate limit** (all sessions together, counted per recipient): at most
-  **20** messages in any 60 s and **100** in any hour. A request that would
+  **20** messages in any 60 s and **100** in any hour; the sends of the
+  store count, so the limit holds across runs of the service. A request that would
   go over is refused whole with `rate_limited` and `retry_after_ms`.
   Android has its own limit too (by default about 30 SMS in 30 minutes per
   app) and then asks the phone's user; that shows as a late `sms.sent` or
@@ -414,18 +459,25 @@ first; the companion does not ask again.
 
 Result: `{"send_id": 3, "recipients": [{"index": 0, "address": "+15555215554", "parts": 1}], "client_ref": "6f1c...", "duplicate": false}`
 (the addresses as normalized; `client_ref` only when the request had one).
-Then, **to this session only** (for a duplicate: none), per recipient:
+`send_id`s do not repeat for at least `keep_ms` across runs of the service:
+the store keeps a counter, started at a random value in 1..2^31 when the
+store was made; ids stay below 2^53. Then, **to this session only** (for a
+duplicate: none; a session that has gone gets none - the reports still go
+into the store), per recipient:
 
-- `sms.sent` `{send_id, index, address}` when every part was handed to the
-  network;
-- `sms.failed` `{send_id, index, address, reason, result_code}` when a part
-  could not be: `reason` one of `generic_failure`, `radio_off`, `null_pdu`,
-  `no_service`, `limit_exceeded`, `short_code_not_allowed`,
-  `short_code_never_allowed`, `fdn_check_failure`, `other`; `result_code`
-  Android's number;
-- `sms.delivered` `{send_id, index, address, status}` when the delivery
-  reports of all parts are in (`status`: `complete`, `pending`, `failed`);
-  only with `delivery_report` and only if the network sends reports.
+- `sms.sent` `{send_id, index, address, [client_ref]}` when every part was
+  handed to the network;
+- `sms.failed` `{send_id, index, address, reason, result_code,
+  [client_ref]}` when a part could not be: `reason` one of
+  `generic_failure`, `radio_off`, `null_pdu`, `no_service`,
+  `limit_exceeded`, `short_code_not_allowed`, `short_code_never_allowed`,
+  `fdn_check_failure`, `other`; `result_code` Android's number;
+- `sms.delivered` `{send_id, index, address, status, [client_ref]}` when
+  the delivery reports of all parts are in (`status`: `complete`,
+  `pending`, `failed`); only with `delivery_report` and only if the network
+  sends reports.
+
+`client_ref` (revision 1) is in each when the send had one.
 
 When the companion is not the default SMS app, Android itself stores sent
 messages in the "sent" box; when it is, the companion stores them.
@@ -434,16 +486,46 @@ messages in the "sent" box; when it is, the companion stores them.
 
 `{send_id}` or `{client_ref}` (exactly one: both is `bad_request` with
 `field` `client_ref`, neither `bad_request` with `field` `send_id`) →
-`{"send_id": 3, "recipients": [{"index": 0, "address": "...", "state": "sent", "reason": null}], "client_ref": "6f1c..."}`
-(`client_ref` when the send had one); `state` one of `sending`, `sent`,
-`failed`, `delivered`, `delivery_failed`. Sends are remembered for an hour
-(for a client that reconnected and missed events); older: `not_found`.
 
-By `client_ref`, `not_found` means that the companion never got that send:
-it was not sent - as far as this run of the service knows. The service
-forgets its sends when it stops (five minutes after the last client, or
-when Android stops it); a client that cannot be sure the service ran on
-since the send should say "unknown" rather than "not sent".
+```json
+{"send_id": 3, "recipients": [{"index": 0, "address": "+15555215554", "state": "sent", "reason": null}],
+ "client_ref": "6f1c...", "store": "6feebacd6df89e21d7171200838883d5", "accepted": 1764150000000}
+```
+
+(`client_ref` when the send had one). The answer comes from the send store
+(revision 1; `sms.send`), so it is there also for a send of an earlier run
+of the service: after a restart, a process death, a reboot. `store` is the
+store's id (as in `hello`), `accepted` the time the send was accepted (the
+phone's clock, ms). `state` is one of `sending`, `sent`, `failed`,
+`delivered`, `delivery_failed`, `unknown`; `reason` is set for `failed` (the
+values of `sms.failed`). Android's reports reach the store also while the
+service does not run (a receiver in the app's manifest takes them).
+
+- **`unknown`** (revision 1): the send was handed to Android, but its
+  outcome was never recorded and will not be. The rule: a recipient that
+  is still `sending` **one hour** after acceptance is `unknown` from then
+  on, and a report that Android gives later is ignored (so the answer does
+  not change once it said `unknown`). It happens when the process died
+  between the store's write and Android taking the send, or when Android
+  never reported. A client should treat it as "may have been sent".
+- **`pending`** (revision 1): while an `sms.send` with that `client_ref` is
+  still being checked (`sms.send`, "While a send is checked"), the answer
+  is
+
+  ```json
+  {"client_ref": "6f1c...", "send_id": null, "recipients": [], "pending": true, "store": "6feebacd6df89e21d7171200838883d5"}
+  ```
+
+  and the client asks again a little later (or waits for the `sms.send`'s
+  answer).
+- **`not_found`**: by `send_id`, no such send in the store. By
+  `client_ref`, the companion never *accepted* a send with it: it was
+  refused, or it never arrived. That means "not sent" - provided that
+  `hello`'s `sends.store` is the same as when the client sent it, and the
+  send is younger than `keep_ms`. A client that cannot be sure of both
+  (another store id, an older send, or a companion of revision 0, which
+  forgot its sends when its service stopped) must say "unknown" rather than
+  "not sent".
 
 ### `mms.parts` (needs READ_SMS)
 
@@ -469,7 +551,7 @@ will take its attachments as client blobs (section 2).
 
 ### `backup.export` (needs READ_SMS)
 
-`{[thread_id], [include_mms: true], [include_mms_data: true]}` →
+`{[thread_id], [include_mms: true], [include_mms_data: true], [window]}` →
 `{"export_id": 1, "sms_count": n, "mms_count": m}`, then the events, in
 order:
 
@@ -482,12 +564,31 @@ order:
   `internal`).
 
 One export at a time per session (`busy`). `backup.cancel` `{export_id}` →
-`{}`. The data are streamed as they are read: a slow client slows the
-export, nothing piles up on the phone.
+`{}` (its answer comes before the `backup.failed` it causes; `not_found`
+unless it is the session's running export). The data are streamed as they
+are read: a slow client slows the export, nothing piles up on the phone.
+
+**Flow control** (revision 1). With `window` (an integer 1..64; out of
+range: `bad_request`, `field` `window`), at most `window` `backup.items`
+events are *outstanding* - sent, but not yet acknowledged; `backup.done`
+and `backup.failed` are not counted. The client acknowledges with
+
+- `backup.ack` `{export_id, seq}` → `{}`: every `backup.items` of that
+  export up to and including `seq`. An ack of a `seq` acknowledged before
+  changes nothing. A `seq` above the last one sent: `bad_request` (`field`
+  `seq`); an `export_id` that is not the session's export: `not_found`.
+  The answer comes before the events the ack lets go. The session's last
+  export stays known until its next export or the end of the session, so
+  acks that come after `backup.done` are answered `{}`.
+
+While the export waits for acks, the session goes on reading and answering
+every other request (the export waits on its own thread); it waits as long
+as the session is open, and `backup.cancel` ends it. Without `window`, the
+export does not wait for acks (as in revision 0).
 
 **The backup file** (what axross writes; the companion only streams): JSON
 Lines, UTF-8. Line 1:
-`{"format": "axross-sms-backup", "version": 1, "created": <ms>, "device": {...hello's android...}, "app_version": "0.1.1"}`;
+`{"format": "axross-sms-backup", "version": 1, "created": <ms>, "device": {...hello's android...}, "app_version": "0.1.2"}`;
 then one Message object per line, exactly as `backup.items` carries them,
 MMS part data base64 in `"data": {"base64": "...", "mime": "..."}` instead
 of a blob reference. Files with mode 0600.
@@ -524,8 +625,8 @@ One restore at a time on the phone (`busy`).
 |---|---|---|
 | `message.received` | sessions subscribed to it | `{"message": Message}` - a new message in the inbox, as stored |
 | `messages.changed` | sessions subscribed to it | `{}` - something in the SMS/MMS store changed (at most one a second) |
-| `sms.sent`, `sms.failed`, `sms.delivered` | the session that sent | see `sms.send` |
-| `backup.items`, `backup.done`, `backup.failed` | the exporting session | see `backup.export` |
+| `sms.sent`, `sms.failed`, `sms.delivered` | the session that sent, while it is open | see `sms.send` (with `client_ref` since revision 1) |
+| `backup.items`, `backup.done`, `backup.failed` | the exporting session | see `backup.export` (paced by `backup.ack` with `window`) |
 | `backup.restore.state` | the restoring session | see restore |
 | `session.closing` | one session | `{"reason": "..."}` - the last frame before the companion closes |
 
@@ -547,7 +648,8 @@ was subscribed, each once.
 | grant | `adb shell pm grant io.github.c0decave.axross.companion android.permission.<P>` for READ_SMS, SEND_SMS, RECEIVE_SMS, READ_CONTACTS, READ_PHONE_STATE, POST_NOTIFICATIONS (13+) |
 | start | `adb shell am start-foreground-service -n io.github.c0decave.axross.companion/io.github.c0decave.axross.companion.CompanionService --es token <64 hex>` (Android 8+); the service is exported only to holders of `android.permission.DUMP`, which the shell has and apps do not. Also when it runs already: the start gives it the token (section 4) |
 | connect | `adb forward tcp:0 localabstract:axross-companion`, then TCP to the port adb printed |
-| open the app | `adb shell am start -n io.github.c0decave.axross.companion/.MainActivity` (when a grant failed: the user grants there) |
+| start, fallback | `adb shell am start -n io.github.c0decave.axross.companion/io.github.c0decave.axross.companion.ShellStartActivity --es token <64 hex>`, where Android refuses the service's start from the shell (below) |
+| open the app | `adb shell am start -n io.github.c0decave.axross.companion/.MainActivity` (when a grant failed: the user grants there; the screen takes no token) |
 
 Debug builds (CI) are `io.github.c0decave.axross.companion.debug` and
 listen on the same socket name; install one or the other. Their classes keep
@@ -555,12 +657,15 @@ the release's names, so the component is
 `io.github.c0decave.axross.companion.debug/io.github.c0decave.axross.companion.CompanionService`.
 
 Where Android refuses the service's start from the shell, `am start -n
-<package>/io.github.c0decave.axross.companion.MainActivity --ez listen true
---es token <64 hex>` starts it from the app's screen, which hands the token
-to the service. (The activity is the launcher's, so any app can start it
-too, with tokens of its own: that tells it nothing and lets it connect to
-nothing, but eight of them push the client's token out. The client then
-gets `unknown_token`, gives its token again and retries once.)
+<package>/io.github.c0decave.axross.companion.ShellStartActivity --es token
+<64 hex>` starts it (since 0.1.2): an activity without a screen, not in the
+launcher, that hands the token to the service and finishes at once. Like
+the service it is exported only to holders of `android.permission.DUMP` -
+the shell, not apps - so no app can give the service tokens of its own and
+push the client's token out. `MainActivity`, the launcher's screen, which
+any app may start, takes no token and no `--ez listen` any more (0.1.1's
+`--ez listen true --es token` there is gone); its button starts the service
+without a token.
 
 Which permissions need the phone's user (see README, "Permissions"):
 all six can be granted by `pm grant` when the app was installed by ADB;
@@ -576,4 +681,32 @@ fields, new methods, new events, new error codes, new capabilities) keep
 the version; anything else raises it. Version 2 raised it because the
 handshake changed (a version-1 client cannot open a session with a
 version-2 companion: it gets `unsupported_protocol`). A client should treat an unknown
-error code as `internal` and an unknown `box`/`status`/`reason` as `other`.
+error code as `internal`, an unknown `box`/`status`/`reason` as `other`, and
+an unknown send `state` as `unknown`.
+
+Additions within a version are counted by `hello`'s `revision` (absent: 0)
+and named by capabilities.
+
+**Revision 1 (companion 0.1.2)**, within version 2:
+
+- `hello`: `"revision": 1`, `"sends": {"store", "keep_ms"}`, the
+  capabilities `sms.refs` and `backup.ack` (section 4);
+- the send store: accepted sends written to disk before they are sent,
+  kept for `keep_ms` (a day, not an hour as in revision 0), across runs of
+  the service; `sms.send` with a known `client_ref` is a duplicate also
+  after a restart, and one with a `client_ref` that is still being checked
+  waits for it; `send_id`s do not repeat across runs; the rate limit holds
+  across runs (section 7, `sms.send`);
+- `sms.status`: from the store, with `store` and `accepted`; the state
+  `unknown`; `pending` for a `client_ref` still being checked; `not_found`
+  by `client_ref` means "not sent" while `store` is unchanged and the send
+  is younger than `keep_ms` (section 7, `sms.status`);
+- `sms.sent`, `sms.failed`, `sms.delivered` carry `client_ref`;
+- `backup.export`'s `window` and the method `backup.ack`;
+- outside the protocol: `ShellStartActivity` for the start with a token;
+  `MainActivity` takes no token (section 9).
+
+A client of revision 0 sees only fields and capabilities it ignores; the
+one change it may notice is that sends are remembered for a day and across
+restarts, so a `client_ref` it sends again after an hour is still a
+duplicate.

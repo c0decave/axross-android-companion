@@ -68,36 +68,35 @@ public class OrderTest {
     }
 
     @Test
-    public void sendTracker() {
-        SendTracker t = new SendTracker(new RateLimiter.Clock() {
-            @Override
-            public long nowMs() {
-                return 1000;
-            }
-        });
-        long id = t.start(7, null, Arrays.asList("+1555", "+1666"), Arrays.asList(2, 1));
-        assertNull(t.onSent(id, 0, true, -1));
-        SendTracker.Event e = t.onSent(id, 0, true, -1);
+    public void sendTracker() throws Exception {
+        SendStoreTest.Clock clock = new SendStoreTest.Clock();
+        SendTracker t = new SendTracker(SendStore.open(SendStoreTest.dir(), clock, new java.security.SecureRandom()),
+                new RateLimiter(20, 100, clock));
+        Session.Call call = SendTrackerTest.call(null);
+        long id = (Long) t.accept(call, null, 7, Arrays.asList("+1555", "+1666"), Arrays.asList(2, 1)).get("send_id");
+        String store = t.store().id();
+        assertNull(t.onSent(store, id, 0, 0, true, -1));
+        SendTracker.Event e = t.onSent(store, id, 0, 1, true, -1);
         assertEquals("sms.sent", e.name);
         assertEquals(7, e.sessionId);
         assertEquals(0L, e.data.get("index"));
-        e = t.onSent(id, 1, false, 4);
+        e = t.onSent(store, id, 1, 0, false, 4);
         assertEquals("sms.failed", e.name);
         assertEquals("no_service", e.data.get("reason"));
-        assertNull("a failed recipient reports nothing more", t.onSent(id, 1, true, -1));
-        assertNull(t.onDelivered(id, 0, "pending"));
-        assertNull(t.onDelivered(id, 0, "complete"));
-        e = t.onDelivered(id, 0, "complete");
+        assertNull("a failed recipient reports nothing more", t.onSent(store, id, 1, 0, true, -1));
+        assertNull(t.onDelivered(store, id, 0, 0, "pending"));
+        assertNull(t.onDelivered(store, id, 0, 0, "complete"));
+        e = t.onDelivered(store, id, 0, 1, "complete");
         assertEquals("sms.delivered", e.name);
         assertEquals("complete", e.data.get("status"));
-        assertNull(t.onDelivered(id, 0, "complete"));
+        assertNull(t.onDelivered(store, id, 0, 1, "complete"));
         Map<String, Object> status = t.status(id);
         List<?> r = (List<?>) status.get("recipients");
         assertEquals("delivered", ((Map<?, ?>) r.get(0)).get("state"));
         assertEquals("failed", ((Map<?, ?>) r.get(1)).get("state"));
         assertNull(t.status(id + 1));
-        assertNull(t.onSent(id + 1, 0, true, -1));
-        assertNull(t.onSent(id, 5, true, -1));
+        assertNull(t.onSent(store, id + 1, 0, 0, true, -1));
+        assertNull(t.onSent(store, id, 5, 0, true, -1));
     }
 
     @Test

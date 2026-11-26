@@ -9,8 +9,6 @@ import android.telephony.SmsManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import io.github.c0decave.axross.companion.protocol.ErrorCode;
-import io.github.c0decave.axross.companion.protocol.Protocol;
-import io.github.c0decave.axross.companion.protocol.RateLimiter;
 import io.github.c0decave.axross.companion.protocol.RequestException;
 import io.github.c0decave.axross.companion.protocol.Requests;
 import io.github.c0decave.axross.companion.protocol.SendTracker;
@@ -19,50 +17,41 @@ import io.github.c0decave.axross.companion.protocol.TextRules;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * sms.send: SmsManager's multipart send, one recipient after the other,
  * with a "sent" and (when asked) a "delivered" PendingIntent per part; their
- * results come back through {@link SmsStatusReceiver} and become the
- * sending session's events. The only way the companion sends: from a
- * session's request, never from an intent. A send whose client_ref was
- * accepted within the hour is answered from the tracker and not sent again.
+ * results come back through {@link SmsStatusReceiver}, go into the send
+ * store and become the sending session's events. The only way the
+ * companion sends: from a session's request, never from an intent. A send
+ * is written to the store before any part is handed to Android; a send
+ * whose client_ref the store has is answered from it and not sent again
+ * (docs/PROTOCOL.md, "sms.send").
  */
 final class Sender {
     static final String ACTION_SENT = "io.github.c0decave.axross.companion.SMS_SENT";
     static final String ACTION_DELIVERED = "io.github.c0decave.axross.companion.SMS_DELIVERED";
+    static final String EXTRA_STORE = "store";
     static final String EXTRA_SEND = "send_id";
     static final String EXTRA_INDEX = "index";
+    static final String EXTRA_PART = "part";
 
     private final Context context;
-    private final Backend backend;
-    private final RateLimiter limiter = new RateLimiter(Protocol.SENDS_PER_MINUTE, Protocol.SENDS_PER_HOUR, System::currentTimeMillis);
-    final SendTracker tracker = new SendTracker(System::currentTimeMillis);
-    private final AtomicInteger requestCodes = new AtomicInteger();
-    /** What the companion has to store itself when it is the default SMS app. */
-    private final Map<Long, Pending> pending = new ConcurrentHashMap<>();
+    private final Sends sends;
 
-    private static final class Pending {
-        final List<String> addresses;
-        final String text;
-        final int subId;
-
-        Pending(List<String> addresses, String text, int subId) {
-            this.addresses = addresses;
-            this.text = text;
-            this.subId = subId;
-        }
+    Sender(Context context) {
+        this.context = context;
+        this.sends = Sends.get(context);
     }
 
-    Sender(Context context, Backend backend) {
-        this.context = context;
-        this.backend = backend;
+    /** sms.send has been parsed (the session's reader thread): its client_ref is "checking". */
+    void arrived(Session.Call call, Requests.SmsSend req) {
+        sends.tracker.arrive(call, req.clientRef);
     }
 
     void send(Session.Call call, Requests.SmsSend req) throws RequestException {
-        Map<String, Object> earlier = tracker.duplicate(req.clientRef);
+        SendTracker tracker = sends.tracker;
+        Map<String, Object> earlier = tracker.resolve(call, req.clientRef);
         if (earlier != null) {
             answerDuplicate(call, earlier);
             return;
@@ -94,17 +83,13 @@ final class Sender {
         for (int i = 0; i < req.recipients.size(); i++) {
             counts.add(parts.size());
         }
-        // (the client_ref looked up again, the rate limit and the
-        // registration in one step: two sends with the same client_ref at
-        // once make one send)
-        Map<String, Object> result = tracker.accept(call.session().number, req.clientRef, req.recipients, counts, limiter);
-        if (SendTracker.isDuplicate(result)) {
-            answerDuplicate(call, result);
-            return;
-        }
+        // (the rate limit, and the send written to the store: from here on it
+        // counts as accepted, also when the process dies before it went)
+        Map<String, Object> result = tracker.accept(call, req.clientRef, call.session().number, req.recipients, counts);
         long sendId = (Long) result.get("send_id");
+        String store = sends.store.id();
         if (Perms.isDefaultSmsApp(context)) {
-            pending.put(sendId, new Pending(req.recipients, req.text, req.subId));
+            sends.pending.put(sendId, new Sends.Pending(req.recipients, req.text, req.subId));
         }
         // (the answer first: the events follow it)
         call.ok(result);
@@ -113,16 +98,18 @@ final class Sender {
             ArrayList<PendingIntent> sent = new ArrayList<>();
             ArrayList<PendingIntent> delivered = req.deliveryReport ? new ArrayList<PendingIntent>() : null;
             for (int p = 0; p < parts.size(); p++) {
-                sent.add(intent(ACTION_SENT, sendId, i, p, false));
+                sent.add(intent(ACTION_SENT, store, sendId, i, p));
                 if (delivered != null) {
-                    delivered.add(intent(ACTION_DELIVERED, sendId, i, p, true));
+                    delivered.add(intent(ACTION_DELIVERED, store, sendId, i, p));
                 }
             }
             try {
                 mgr.sendMultipartTextMessage(req.recipients.get(i), null, parts, sent, delivered);
             } catch (RuntimeException e) {
                 L.w("sendMultipartTextMessage failed", e);
-                onSent(sendId, i, false, SmsManager.RESULT_ERROR_GENERIC_FAILURE);
+                // (every part fails: the first report makes the recipient failed)
+                report(context, sends, sends.tracker.onSent(store, sendId, i, 0, false, SmsManager.RESULT_ERROR_GENERIC_FAILURE),
+                        sendId, i);
             }
         }
     }
@@ -133,22 +120,30 @@ final class Sender {
         call.ok(result);
     }
 
-    private PendingIntent intent(String action, long sendId, int index, int part, boolean mutable) {
-        // (a URI of its own for each part: PendingIntents that differ only in
-        // their extras would be the same one)
-        Intent i = new Intent(action, Uri.parse("axross-companion://sms/" + sendId + "/" + index + "/" + part),
+    /**
+     * A PendingIntent of its own for each part: its data URI names the store,
+     * the send, the recipient and the part, and its request code is unique
+     * for some million sends in a row - so that a later run never gets an
+     * earlier run's FLAG_ONE_SHOT intent back (PendingIntents that differ
+     * only in their extras would be the same one).
+     */
+    private PendingIntent intent(String action, String store, long sendId, int index, int part) {
+        boolean delivery = ACTION_DELIVERED.equals(action);
+        Intent i = new Intent(action, Uri.parse("axross-companion://sms/" + store + "/" + sendId + "/" + index + "/" + part),
                 context, SmsStatusReceiver.class)
+                .putExtra(EXTRA_STORE, store)
                 .putExtra(EXTRA_SEND, sendId)
-                .putExtra(EXTRA_INDEX, index);
+                .putExtra(EXTRA_INDEX, index)
+                .putExtra(EXTRA_PART, part);
         // (the delivery report's PDU is filled in by the system: mutable, which
         // an explicit intent to our own receiver may be)
         int flags = PendingIntent.FLAG_ONE_SHOT;
         if (Build.VERSION.SDK_INT >= 31) {
-            flags |= mutable ? PendingIntent.FLAG_MUTABLE : PendingIntent.FLAG_IMMUTABLE;
-        } else if (!mutable) {
+            flags |= delivery ? PendingIntent.FLAG_MUTABLE : PendingIntent.FLAG_IMMUTABLE;
+        } else if (!delivery) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        return PendingIntent.getBroadcast(context, requestCodes.incrementAndGet(), i, flags);
+        return PendingIntent.getBroadcast(context, SendTracker.requestCode(sendId, index, part, delivery), i, flags);
     }
 
     @SuppressWarnings("deprecation")
@@ -160,22 +155,31 @@ final class Sender {
         return subId < 0 ? SmsManager.getDefault() : SmsManager.getSmsManagerForSubscriptionId(subId);
     }
 
-    void onSent(long sendId, int index, boolean ok, int resultCode) {
-        SendTracker.Event e = tracker.onSent(sendId, index, ok, resultCode);
+    /**
+     * What a report brought (from {@link SmsStatusReceiver}, or a send that
+     * failed at once): when the companion is the default SMS app, the sent
+     * or failed message goes into the store; the event goes to the session
+     * that sent, if it is still there.
+     */
+    static void report(Context context, Sends sends, SendTracker.Event e, long sendId, int index) {
         if (e == null) {
             return;
         }
-        Pending p = pending.get(sendId);
-        if (p != null && index < p.addresses.size()) {
-            backend.store().storeSent(p.addresses.get(index), p.text, p.subId, !ok);
+        CompanionService service = CompanionService.get();
+        if (!"sms.delivered".equals(e.name)) {
+            Sends.Pending p = sends.pending.get(sendId);
+            if (p != null && index < p.addresses.size()) {
+                SmsStore smsStore = service != null ? service.backend().store() : new SmsStore(context, new Contacts(context));
+                smsStore.storeSent(p.addresses.get(index), p.text, p.subId, "sms.failed".equals(e.name));
+                synchronized (p) {
+                    if (--p.open <= 0) {
+                        sends.pending.remove(sendId);
+                    }
+                }
+            }
         }
-        backend.toSession(e.sessionId, e.name, e.data);
-    }
-
-    void onDelivered(long sendId, int index, String status) {
-        SendTracker.Event e = tracker.onDelivered(sendId, index, status);
-        if (e != null) {
-            backend.toSession(e.sessionId, e.name, e.data);
+        if (service != null && e.sessionId >= 0) {
+            service.backend().toSession(e.sessionId, e.name, e.data);
         }
     }
 }

@@ -1,0 +1,399 @@
+{
+  "name": "send events with client_ref",
+  "description": "A send with a client_ref to two recipients (the first in two parts): sms.sent, sms.failed and sms.delivered each name the client_ref; sms.status by client_ref says delivered and failed. A send without a client_ref: its events have none, nor has its status.",
+  "phone": {
+    "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
+    "hello": {
+      "revision": 1,
+      "app": "axross-android-companion",
+      "app_version": "0.1.2",
+      "app_version_code": 102,
+      "package": "io.github.c0decave.axross.companion",
+      "android": {
+        "sdk_int": 34,
+        "release": "14",
+        "manufacturer": "Google",
+        "model": "sdk_gphone64_x86_64"
+      },
+      "capabilities": [
+        "contacts",
+        "contacts.photo",
+        "threads",
+        "messages",
+        "messages.search",
+        "message.mark_read",
+        "message.delete",
+        "sms.send",
+        "sms.status",
+        "mms.parts",
+        "mms.part_data",
+        "subscribe",
+        "subscriptions",
+        "backup.export",
+        "backup.restore",
+        "sms.refs",
+        "backup.ack"
+      ],
+      "limits": {
+        "max_frame": 16777216,
+        "max_request_json": 4194304,
+        "max_blob_in": 8388608,
+        "max_blobs_pending": 33554432,
+        "max_blob_out": 67108864,
+        "max_in_flight": 8,
+        "max_recipients": 10,
+        "max_text_chars": 5000,
+        "max_parts": 30,
+        "sends_per_minute": 20,
+        "sends_per_hour": 100,
+        "max_page": 500
+      },
+      "default_sms_app": false,
+      "permissions": {
+        "READ_SMS": true,
+        "SEND_SMS": true,
+        "RECEIVE_SMS": true,
+        "READ_CONTACTS": true,
+        "READ_PHONE_STATE": true,
+        "POST_NOTIFICATIONS": true
+      },
+      "sends": {
+        "store": "6feebacd6df89e21d7171200838883d5",
+        "keep_ms": 86400000
+      }
+    },
+    "sends": {
+      "next_send_id": 1601822731
+    },
+    "answers": {
+      "sms.send": [
+        {
+          "result": {
+            "send_id": 1601822731,
+            "recipients": [
+              {
+                "index": 0,
+                "address": "+15555215554",
+                "parts": 2
+              },
+              {
+                "index": 1,
+                "address": "+15555215555",
+                "parts": 2
+              }
+            ],
+            "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65",
+            "duplicate": false
+          },
+          "events": [
+            {
+              "event": "sms.sent",
+              "data": {
+                "send_id": 1601822731,
+                "index": 0,
+                "address": "+15555215554",
+                "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+              }
+            },
+            {
+              "event": "sms.failed",
+              "data": {
+                "send_id": 1601822731,
+                "index": 1,
+                "address": "+15555215555",
+                "reason": "radio_off",
+                "result_code": 2,
+                "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+              }
+            },
+            {
+              "event": "sms.delivered",
+              "data": {
+                "send_id": 1601822731,
+                "index": 0,
+                "address": "+15555215554",
+                "status": "complete",
+                "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+              }
+            }
+          ]
+        },
+        {
+          "result": {
+            "send_id": 1601822732,
+            "recipients": [
+              {
+                "index": 0,
+                "address": "+15555215554",
+                "parts": 1
+              }
+            ],
+            "duplicate": false
+          },
+          "events": [
+            {
+              "event": "sms.sent",
+              "data": {
+                "send_id": 1601822732,
+                "index": 0,
+                "address": "+15555215554"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "client": {
+        "id": 1,
+        "method": "hello",
+        "params": {
+          "protocols": [
+            2
+          ],
+          "client": "axross",
+          "client_version": "0.15.186",
+          "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+          "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "protocol": 2,
+          "revision": 1,
+          "app": "axross-android-companion",
+          "app_version": "0.1.2",
+          "app_version_code": 102,
+          "package": "io.github.c0decave.axross.companion",
+          "android": {
+            "sdk_int": 34,
+            "release": "14",
+            "manufacturer": "Google",
+            "model": "sdk_gphone64_x86_64"
+          },
+          "capabilities": [
+            "contacts",
+            "contacts.photo",
+            "threads",
+            "messages",
+            "messages.search",
+            "message.mark_read",
+            "message.delete",
+            "sms.send",
+            "sms.status",
+            "mms.parts",
+            "mms.part_data",
+            "subscribe",
+            "subscriptions",
+            "backup.export",
+            "backup.restore",
+            "sms.refs",
+            "backup.ack"
+          ],
+          "limits": {
+            "max_frame": 16777216,
+            "max_request_json": 4194304,
+            "max_blob_in": 8388608,
+            "max_blobs_pending": 33554432,
+            "max_blob_out": 67108864,
+            "max_in_flight": 8,
+            "max_recipients": 10,
+            "max_text_chars": 5000,
+            "max_parts": 30,
+            "sends_per_minute": 20,
+            "sends_per_hour": 100,
+            "max_page": 500
+          },
+          "default_sms_app": false,
+          "permissions": {
+            "READ_SMS": true,
+            "SEND_SMS": true,
+            "RECEIVE_SMS": true,
+            "READ_CONTACTS": true,
+            "READ_PHONE_STATE": true,
+            "POST_NOTIFICATIONS": true
+          },
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000
+          },
+          "auth": {
+            "companion_nonce": "*",
+            "proof": "*"
+          }
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 2,
+        "method": "auth",
+        "params": {
+          "proof": "*"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 2,
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "client": {
+        "id": 3,
+        "method": "sms.send",
+        "params": {
+          "recipients": [
+            "+15555215554",
+            "+1 555 521 5555"
+          ],
+          "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 3,
+        "ok": true,
+        "result": "=phone"
+      }
+    },
+    {
+      "companion": {
+        "event": "sms.sent",
+        "data": {
+          "send_id": 1601822731,
+          "index": 0,
+          "address": "+15555215554",
+          "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+        }
+      }
+    },
+    {
+      "companion": {
+        "event": "sms.failed",
+        "data": {
+          "send_id": 1601822731,
+          "index": 1,
+          "address": "+15555215555",
+          "reason": "radio_off",
+          "result_code": 2,
+          "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+        }
+      }
+    },
+    {
+      "companion": {
+        "event": "sms.delivered",
+        "data": {
+          "send_id": 1601822731,
+          "index": 0,
+          "address": "+15555215554",
+          "status": "complete",
+          "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 4,
+        "method": "sms.status",
+        "params": {
+          "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 4,
+        "ok": true,
+        "result": {
+          "send_id": 1601822731,
+          "recipients": [
+            {
+              "index": 0,
+              "address": "+15555215554",
+              "state": "delivered",
+              "reason": null
+            },
+            {
+              "index": 1,
+              "address": "+15555215555",
+              "state": "failed",
+              "reason": "radio_off"
+            }
+          ],
+          "client_ref": "3e0c1b9a-5d2f-4a8e-b7c6-1f0d9e8a7b65",
+          "store": "6feebacd6df89e21d7171200838883d5",
+          "accepted": "*"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 5,
+        "method": "sms.send",
+        "params": {
+          "recipients": [
+            "+15555215554"
+          ],
+          "text": "no ref"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 5,
+        "ok": true,
+        "result": "=phone"
+      }
+    },
+    {
+      "companion": {
+        "event": "sms.sent",
+        "data": {
+          "send_id": 1601822732,
+          "index": 0,
+          "address": "+15555215554"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 6,
+        "method": "sms.status",
+        "params": {
+          "send_id": 1601822732
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 6,
+        "ok": true,
+        "result": {
+          "send_id": 1601822732,
+          "recipients": [
+            {
+              "index": 0,
+              "address": "+15555215554",
+              "state": "sent",
+              "reason": null
+            }
+          ],
+          "store": "6feebacd6df89e21d7171200838883d5",
+          "accepted": "*"
+        }
+      }
+    }
+  ]
+}

@@ -14,12 +14,20 @@
 # app), and an SMS to the emulator's own number, asked for twice with one
 # client_ref: one send, the sms.sent event must arrive, sms.status by
 # client_ref; the SMS coming back (message.received), it being found in a
-# thread and by search, are checked and reported. Then eight more tokens
-# push the first one out (unknown_token) and the newest works.
+# thread and by search, are checked and reported; an export, and one paced
+# by backup.ack (window 1) that answers a ping while it waits. Then eight
+# more tokens push the first one out (unknown_token) and the newest works.
 #
-# Afterwards: the app's process is still alive, its log has no crash, and
-# its own log lines carry neither the text sent, nor the number, nor a
-# token (privacy).
+# Then the restart (revision 1): the service is stopped and its process
+# killed, the service started again with a new token - the send store must
+# be the same (hello's sends.store), sms.status must still know the send,
+# and the same client_ref again must be a duplicate (not sent again). The
+# fallback start (`am start ... ShellStartActivity --es token`) must hand
+# its token to the service; MainActivity, the launcher's, must not take one.
+#
+# Afterwards: the app's process (the second one) is still alive, its log
+# has no crash, and its own log lines carry neither the text sent, nor the
+# number, nor a token (privacy).
 #
 # Leaves logcat.txt, app-log.txt and smoke-client.json in the output directory.
 set -u
@@ -34,6 +42,9 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$OUT"
 say() { printf '%s\n' "smoke: $*"; }
 app_log() { adb logcat -d -s axross-companion:V 2>/dev/null; }
+# (the first run's log is kept before the restart clears logcat)
+all_logcat() { cat "$OUT/logcat-run1.txt" 2>/dev/null; adb logcat -d 2>/dev/null; }
+all_app_log() { cat "$OUT/app-log-run1.txt" 2>/dev/null; app_log; }
 app_pid() { adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}'; }
 
 # An annotation (readable through the API when logs and artifacts are not).
@@ -48,7 +59,7 @@ annotate() { # level title file-or-text
 
 finish() {
     adb logcat -d > "$OUT/logcat.txt" 2>/dev/null
-    app_log > "$OUT/app-log.txt"
+    all_app_log > "$OUT/app-log.txt"
     adb forward --remove "tcp:$PORT" >/dev/null 2>&1
     say "the app's own lines:"
     cat "$OUT/app-log.txt"
@@ -94,9 +105,25 @@ start_service() { # token
     started=$(adb shell am start-foreground-service -n "$PACKAGE/$CLASSES.CompanionService" --es token "$1" 2>&1 | tr -d '\r')
     echo "$started" | grep -v -e "$1"
     if echo "$started" | grep -qi "error"; then
-        echo "::warning title=smoke test::am start-foreground-service was refused; starting through the activity (--ez listen true)"
-        adb shell am start -W -n "$PACKAGE/$CLASSES.MainActivity" --ez listen true --es token "$1" | grep -v -e "$1"
+        echo "::warning title=smoke test::am start-foreground-service was refused; starting through ShellStartActivity"
+        shell_start "$1"
     fi
+}
+# The fallback: the activity only the shell may start hands the token on.
+shell_start() { # token
+    adb shell am start -W -n "$PACKAGE/$CLASSES.ShellStartActivity" --es token "$1" 2>&1 | tr -d '\r' | grep -v -e "$1"
+}
+wait_listening() { # seconds
+    local waited=0
+    until app_log | grep -q "listening on localabstract"; do
+        if [ "$waited" -ge "$1" ]; then
+            return 1
+        fi
+        sleep 1; waited=$((waited + 1))
+    done
+}
+ping_with() { # token -> the reference client's output
+    python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$1" call ping 2>&1
 }
 TOKEN=$(new_token)
 TOKENS="$TOKEN"
@@ -105,13 +132,9 @@ adb logcat -c
 say "starting the service (am start-foreground-service --es token)"
 start_service "$TOKEN"
 
-waited=0
-until app_log | grep -q "listening on localabstract"; do
-    if [ "$waited" -ge 30 ]; then
-        say "the service does not listen within 30 s"; finish; exit 1
-    fi
-    sleep 1; waited=$((waited + 1))
-done
+if ! wait_listening 30; then
+    say "the service does not listen within 30 s"; finish; exit 1
+fi
 PID=$(app_pid)
 say "listening (pid $PID)"
 
@@ -130,14 +153,14 @@ for i in 1 2 3 4 5 6 7 8; do
     start_service "$LAST" > /dev/null
 done
 sleep 2
-GOT=$(python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$TOKEN" call ping 2>&1)
+GOT=$(ping_with "$TOKEN")
 if echo "$GOT" | grep -q '"unknown_token"'; then
     say "ok   the first token, after eight more: unknown_token"
 else
     say "FAIL the first token, after eight more: expected unknown_token, got: $(echo "$GOT" | head -c 300)"
     result=1
 fi
-GOT=$(python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$LAST" call ping 2>&1)
+GOT=$(ping_with "$LAST")
 if echo "$GOT" | grep -q '"time"'; then
     say "ok   the newest token works"
 else
@@ -149,17 +172,78 @@ if [ "$(app_pid)" != "$PID" ]; then
     say "FAIL the app's process died or was started again during the test"
     result=1
 fi
-if adb logcat -d 2>/dev/null | grep -A5 "FATAL EXCEPTION" | grep -q "$PACKAGE"; then
+
+# The restart: the service stops, its process goes, the service starts again.
+say "restart: stopping the service and its process"
+adb shell am stopservice -n "$PACKAGE/$CLASSES.CompanionService" >/dev/null 2>&1 || true
+sleep 3
+adb shell am kill "$PACKAGE" >/dev/null 2>&1 || true
+sleep 2
+if [ -n "$(app_pid)" ]; then
+    # (still there: a stop that leaves no process at all)
+    adb shell am force-stop "$PACKAGE" >/dev/null 2>&1 || true
+    sleep 2
+fi
+if [ -n "$(app_pid)" ]; then
+    say "FAIL the app's process does not end (pid $(app_pid))"
+    result=1
+fi
+adb logcat -d > "$OUT/logcat-run1.txt" 2>/dev/null
+app_log > "$OUT/app-log-run1.txt"
+adb logcat -c
+TOKEN2=$(new_token)
+TOKENS="$TOKENS $TOKEN2"
+start_service "$TOKEN2"
+if ! wait_listening 30; then
+    say "FAIL the service does not listen again within 30 s"; finish; exit 1
+fi
+PID2=$(app_pid)
+say "listening again (pid $PID2, was $PID)"
+if [ "$PID2" = "$PID" ]; then
+    say "FAIL the restart kept the process (pid $PID)"
+    result=1
+fi
+python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$TOKEN2" smoke-restart --out "$OUT" || result=1
+
+# The fallback start, and the launcher's screen that takes no token.
+TOKEN3=$(new_token)
+TOKEN4=$(new_token)
+TOKENS="$TOKENS $TOKEN3 $TOKEN4"
+shell_start "$TOKEN3" > /dev/null
+sleep 2
+GOT=$(ping_with "$TOKEN3")
+if echo "$GOT" | grep -q '"time"'; then
+    say "ok   ShellStartActivity --es token: the token works"
+else
+    say "FAIL ShellStartActivity --es token: $(echo "$GOT" | head -c 300)"
+    result=1
+fi
+adb shell am start -W -n "$PACKAGE/$CLASSES.MainActivity" --ez listen true --es token "$TOKEN4" 2>&1 | tr -d '\r' | grep -v -e "$TOKEN4"
+sleep 2
+GOT=$(ping_with "$TOKEN4")
+if echo "$GOT" | grep -q '"unknown_token"'; then
+    say "ok   MainActivity takes no token (unknown_token)"
+else
+    say "FAIL MainActivity took a token: $(echo "$GOT" | head -c 300)"
+    result=1
+fi
+adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+
+if [ "$(app_pid)" != "$PID2" ]; then
+    say "FAIL the app's process died or was started again after the restart"
+    result=1
+fi
+if all_logcat | grep -A5 "FATAL EXCEPTION" | grep -q "$PACKAGE"; then
     say "FAIL the app crashed"
     result=1
 fi
 # privacy: no message text and no number in the app's own lines
-if app_log | grep -q -e "axross companion smoke" -e "$NUMBER" -e "${NUMBER#1}" -e 15550001234; then
+if all_app_log | grep -q -e "axross companion smoke" -e "$NUMBER" -e "${NUMBER#1}" -e 15550001234; then
     say "FAIL the app's log carries the text or the number"
     result=1
 fi
 for t in $TOKENS; do
-    if app_log | grep -q -e "$t" -e "${t:0:16}"; then
+    if all_app_log | grep -q -e "$t" -e "${t:0:16}"; then
         say "FAIL the app's log carries a token"
         result=1
     fi

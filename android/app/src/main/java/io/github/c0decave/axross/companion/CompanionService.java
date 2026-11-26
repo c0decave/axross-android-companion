@@ -34,10 +34,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The foreground service that listens on the abstract socket
  * "axross-companion" (docs/PROTOCOL.md, section 1). Started by axross over
  * ADB ({@code am start-foreground-service}; the service is exported only to
- * holders of android.permission.DUMP - the shell, not apps) or from the
- * app's own screen. Each start may carry a token ({@code --es token <64
- * hex>}): the service keeps the last eight in memory, and a client must
- * prove that it holds one (docs/PROTOCOL.md, section 4). It accepts a peer
+ * holders of android.permission.DUMP - the shell, not apps), through
+ * {@link ShellStartActivity} (the same guard) where the shell may not start
+ * a service, or - without a token - by the button on the app's own screen.
+ * A start from the shell may carry a token ({@code --es token <64 hex>}):
+ * the service keeps the last eight in memory, and a client must prove that
+ * it holds one (docs/PROTOCOL.md, section 4). The sends live longer than
+ * the service: {@link Sends}. It accepts a peer
  * only if it is uid 2000 or 0, shows "axross is connected" while a client
  * is attached, and stops by itself five minutes after the last client left.
  *
@@ -88,6 +91,8 @@ public final class CompanionService extends Service {
         Notes.channels(this);
         workers = Executors.newCachedThreadPool(daemon("axross-companion-worker"));
         timers = Executors.newScheduledThreadPool(2, daemon("axross-companion-timer"));
+        // (the send store, read before the first client: hello names it)
+        Sends.get(this);
         backend = new Backend(this);
         running = this;
         backend.start();

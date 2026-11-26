@@ -8,6 +8,12 @@ import java.util.Map;
 /** The constants of docs/PROTOCOL.md. */
 public final class Protocol {
     public static final int VERSION = 2;
+    /**
+     * Additions within the version that old clients can ignore: 1 (companion
+     * 0.1.2) - hello's "revision" and "sends", the send store across runs,
+     * "pending" in sms.status, client_ref in the sms.* events, backup.ack.
+     */
+    public static final int REVISION = 1;
     public static final List<Long> SUPPORTED = Collections.singletonList(2L);
 
     /** The abstract socket's name (localabstract:axross-companion). */
@@ -35,7 +41,8 @@ public final class Protocol {
     public static final List<String> CAPABILITIES = Collections.unmodifiableList(Arrays.asList(
             "contacts", "contacts.photo", "threads", "messages", "messages.search",
             "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts",
-            "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore"));
+            "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore",
+            "sms.refs", "backup.ack"));
 
     /** The events a session can subscribe to. */
     public static final List<String> SUBSCRIBABLE = Collections.unmodifiableList(Arrays.asList(
@@ -47,6 +54,11 @@ public final class Protocol {
             "POST_NOTIFICATIONS"));
 
     private Protocol() {
+    }
+
+    /** hello's "sends": the send store's id and how long a send is kept. */
+    public static Map<String, Object> sends(String storeId) {
+        return Json.obj("store", storeId, "keep_ms", SendStore.KEEP_MS);
     }
 
     public static Map<String, Object> limits() {

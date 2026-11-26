@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A small client of the axross companion protocol, version 2 (docs/PROTOCOL.md).
+"""A small client of the axross companion protocol, version 2, revision 1 (docs/PROTOCOL.md).
 
 Python 3, standard library only. It is the emulator smoke test's client
 and a reference for other clients (the codec is the first fifty lines, the
@@ -11,6 +11,8 @@ handshake is Connection.hello).
     python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN call hello
     python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN call threads.list '{"limit": 5}'
     python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN smoke --sms-to 15555215554 --out smoke-output
+    # (the service stopped and started again, with a new token)
+    python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN2 smoke-restart --out smoke-output
 
 The token is the one the service was started with (--es token); the
 client proves that it holds it, and checks that the companion does. The
@@ -279,15 +281,89 @@ class Smoke:
             return self.check(e.code == code, f"{method} refused with {code} (got {e.code})")
         return self.check(False, f"{method} refused with {code} (it passed)")
 
+    def export_events(self, conn, exp, window):
+        """The export's events to the end; with a window, each backup.items acknowledged (after a ping)."""
+        items = 0
+        what = "backup.export" + (f" (window {window})" if window else "")
+        pinged = False
+        try:
+            while True:
+                ev = conn.wait_event(lambda e: e["event"].startswith("backup.") and e["data"].get("export_id") == exp["export_id"], timeout=60)
+                if ev["event"] == "backup.items":
+                    items += len(ev["data"]["items"])
+                    if window:
+                        if not pinged:
+                            # (the ack is still out: the companion waits, and answers)
+                            self.check("time" in conn.call("ping"), f"{what}: a ping is answered while the export waits for its ack")
+                            pinged = True
+                        acked = conn.call("backup.ack", {"export_id": exp["export_id"], "seq": ev["data"]["seq"]})
+                        if ev["data"]["seq"] == 0:
+                            self.check(acked == {}, f"{what}: backup.ack answered {{}}")
+                elif ev["event"] == "backup.done":
+                    break
+                else:
+                    self.check(False, f"{what} ({ev['event']} {ev['data'].get('code')})")
+                    break
+            self.check(items == exp["sms_count"] + exp["mms_count"], f"{what} streamed {items} items")
+        except TimeoutError:
+            self.check(False, f"{what} ends within 60 s")
+        if window:
+            self.expect_error(conn, "backup.ack", {"export_id": exp["export_id"], "seq": 1 << 40}, "bad_request")
+            self.expect_error(conn, "backup.ack", {"export_id": exp["export_id"] + 1000, "seq": 0}, "not_found")
+
+    def restart(self):
+        """After the service (and its process) was stopped and started again: the send store is the same."""
+        a = self.args
+        path = os.path.join(a.out, "smoke-client.json")
+        with open(path) as f:
+            before = json.load(f)
+        conn = self.connect()
+        hello = conn.hello(a.token)
+        self.report = before
+        self.report["failures"] = []
+        self.report["warnings"] = before.get("warnings", [])
+        self.check((hello.get("sends") or {}).get("store") == before.get("store"),
+                   "after the restart: the same send store id")
+        send = before.get("send")
+        if not send:
+            self.check(False, "after the restart: the first run's send is known")
+        else:
+            ref, send_id = send["client_ref"], send["send_id"]
+            st = conn.call("sms.status", {"client_ref": ref})
+            self.check(st.get("send_id") == send_id and st.get("store") == before.get("store"),
+                       f"after the restart: sms.status by client_ref (send_id {send_id})")
+            state = st["recipients"][0]["state"]
+            self.check(state in ("sent", "delivered"), f"after the restart: the state is still {state} (was {send.get('state')})")
+            self.check(conn.call("sms.status", {"send_id": send_id}).get("client_ref") == ref, "after the restart: sms.status by send_id")
+            again = conn.call("sms.send", {"recipients": [before.get("sms_to", "15555215554")], "text": "not sent again", "client_ref": ref})
+            self.check(again.get("duplicate") is True and again.get("send_id") == send_id,
+                       "after the restart: the same client_ref is a duplicate, not sent again")
+            time.sleep(3)
+            self.check(not [e for e in conn.events if e["event"].startswith("sms.")], "after the restart: no events for the duplicate")
+        self.expect_error(conn, "sms.status", {"client_ref": "never-" + secrets.token_hex(4)}, "not_found")
+        conn.close()
+        self.report["restart_failures"] = self.failures
+        with open(path, "w") as f:
+            json.dump(self.report, f, indent=2)
+        print(f"smoke client (restart): {len(self.failures)} failures", flush=True)
+        return 1 if self.failures else 0
+
     def run(self):
         a = self.args
         conn = self.connect()
         hello = conn.hello(a.token)
-        self.report["hello"] = {k: hello.get(k) for k in ("protocol", "app", "app_version", "package", "android", "default_sms_app", "permissions")}
+        self.report["hello"] = {k: hello.get(k) for k in ("protocol", "revision", "app", "app_version", "package", "android",
+                                                          "default_sms_app", "permissions", "sends")}
         print("hello: " + json.dumps(self.report["hello"]), flush=True)
         self.check(hello.get("protocol") == 2, "protocol version 2, the companion's proof checked, auth done")
         self.check(hello.get("app") == "axross-android-companion", "the app's name")
         self.check("sms.send" in hello.get("capabilities", []), "sms.send is a capability")
+        self.check(hello.get("revision") == 1 and {"sms.refs", "backup.ack"} <= set(hello.get("capabilities", [])),
+                   "revision 1, with the capabilities sms.refs and backup.ack")
+        sends = hello.get("sends") or {}
+        store = sends.get("store")
+        self.check(is_hex(store, 32) and sends.get("keep_ms") == 86400000, "hello names the send store (32 hex) and keep_ms")
+        self.report["store"] = store
         perms = hello.get("permissions", {})
         for p in ("READ_SMS", "SEND_SMS", "RECEIVE_SMS", "READ_CONTACTS", "READ_PHONE_STATE"):
             self.check(perms.get(p) is True, f"{p} granted (pm grant)")
@@ -367,6 +443,7 @@ class Smoke:
         params = {"recipients": [a.sms_to], "text": text, "delivery_report": True, "client_ref": ref}
         sent = conn.call("sms.send", params)
         send_id = sent["send_id"]
+        self.report["send"] = {"client_ref": ref, "send_id": send_id}
         self.check(len(sent["recipients"]) == 1 and sent["recipients"][0]["parts"] == 1, f"sms.send accepted (send_id {send_id})")
         self.check(sent.get("duplicate") is False and sent.get("client_ref") == ref, "sms.send: duplicate false, client_ref echoed")
         # the same client_ref again (as after a lost answer): answered, not sent again
@@ -380,6 +457,7 @@ class Smoke:
                 self.check(False, f"sms.sent arrives (got sms.failed: {ev['data'].get('reason')}, {ev['data'].get('result_code')})")
             else:
                 self.check(True, "sms.sent arrives")
+            self.check(ev["data"].get("client_ref") == ref, "the event names the client_ref")
         except TimeoutError:
             self.check(False, f"sms.sent arrives within {a.sent_timeout} s")
         try:
@@ -391,6 +469,10 @@ class Smoke:
         self.check(st["recipients"][0]["state"] in ("sent", "delivered"), f"sms.status says {st['recipients'][0]['state']}")
         st = conn.call("sms.status", {"client_ref": ref})
         self.check(st.get("send_id") == send_id and st.get("client_ref") == ref, "sms.status by client_ref")
+        self.check(st.get("store") == store and isinstance(st.get("accepted"), int)
+                   and abs(st["accepted"] / 1000 - pong["time"] / 1000) < 600,
+                   "sms.status names the store and the time of acceptance")
+        self.report["send"]["state"] = st["recipients"][0]["state"]
         self.expect_error(conn, "sms.status", {"client_ref": f"never-{token}"}, "not_found")
         self.expect_error(conn, "sms.status", {"send_id": send_id, "client_ref": ref}, "bad_request")
         again_events = [e for e in conn.events if e["event"] == "sms.sent" and e["data"].get("send_id") == send_id]
@@ -449,25 +531,16 @@ class Smoke:
 
         # an export, streamed
         exp = conn.call("backup.export", {"include_mms": True, "include_mms_data": False})
-        items = 0
-        try:
-            while True:
-                ev = conn.wait_event(lambda e: e["event"].startswith("backup.") and e["data"].get("export_id") == exp["export_id"], timeout=60)
-                if ev["event"] == "backup.items":
-                    items += len(ev["data"]["items"])
-                elif ev["event"] == "backup.done":
-                    break
-                else:
-                    self.check(False, f"backup.export ({ev['event']} {ev['data'].get('code')})")
-                    break
-            self.check(items == exp["sms_count"] + exp["mms_count"], f"backup.export streamed {items} items")
-        except TimeoutError:
-            self.check(False, "backup.export ends within 60 s")
+        self.export_events(conn, exp, None)
+        # and one paced by acks (window 1): the session answers while the export waits
+        exp = conn.call("backup.export", {"include_mms": True, "include_mms_data": False, "window": 1})
+        self.export_events(conn, exp, 1)
         self.report["messages_changed_events"] = sum(1 for e in conn.events if e["event"] == "messages.changed")
         conn.close()
 
         self.report["failures"] = self.failures
         self.report["warnings"] = self.warnings
+        self.report["sms_to"] = a.sms_to
         if a.out:
             os.makedirs(a.out, exist_ok=True)
             with open(os.path.join(a.out, "smoke-client.json"), "w") as f:
@@ -491,11 +564,14 @@ def main():
     s.add_argument("--receive-timeout", type=int, default=60)
     s.add_argument("--inject", default=None, help="a command that makes an SMS arrive; {text} is replaced by its text")
     s.add_argument("--connect-timeout", type=int, default=60, help="seconds to wait for the companion to listen")
+    r = sub.add_parser("smoke-restart", help="after smoke and a restart of the service: the send store is kept")
+    r.add_argument("--out", required=True, help="the smoke's output directory (its smoke-client.json)")
+    r.add_argument("--connect-timeout", type=int, default=60)
     args = parser.parse_args()
     if not is_hex(args.token, 64):
         parser.error("--token must be 64 lowercase hex characters")
 
-    if args.command == "smoke":
+    if args.command in ("smoke", "smoke-restart"):
         deadline = time.monotonic() + args.connect_timeout
         while True:
             try:
@@ -511,7 +587,7 @@ def main():
                     print(f"FAIL the companion does not answer hello on port {args.port}: {e!r}")
                     return 1
                 time.sleep(2)
-        return Smoke(args).run()
+        return Smoke(args).run() if args.command == "smoke" else Smoke(args).restart()
 
     conn = Connection(port=args.port)
     try:

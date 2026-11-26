@@ -17,18 +17,27 @@ android/app/src/main/java/io/github/c0decave/axross/companion/
     RateLimiter      sliding windows (minute, hour)
     PeerPolicy       uid 2000 / 0 (the credentials behind an interface)
     MessageOrder     the cursor's order and the provider selections after it
-    SendTracker      parts sent/delivered -> sms.* events; sms.status;
-                     client_ref: a send asked for again is not sent again
+    SendStore        the accepted sends on disk (sends.json, atomic; a
+                     journal of Android's reports): states, "unknown",
+                     the store id, the send-id counter, keep_ms
+    SendTracker      over the store: client_refs being checked ("pending"),
+                     duplicates (also across runs), the rate limit,
+                     sms.status, the sms.* events and their session
+    Exports          backup.export's one-at-a-time, cancel, window and acks
     Protocol, ErrorCode     constants
   CompanionService   the foreground service: LocalServerSocket, peer check, sessions, notification
   Backend            Session.Handler: what each method does on the phone
   SmsStore           the Telephony provider: threads, messages, MMS, writes
   Contacts           ContactsContract: list, photo, lookup
-  Sender, SmsStatusReceiver     SmsManager and its PendingIntents
+  Sends              the send store and tracker, once per process
+  Sender, SmsStatusReceiver     SmsManager and its PendingIntents (the
+                     receiver in the manifest: reports reach the store
+                     also while the service does not run)
   Watcher            content observer + SMS_RECEIVED -> message.received
   Exporter           backup.export, streamed
   Restore, RestoreActivity      backup.restore.*, with the user's yes
-  MainActivity       the one screen
+  MainActivity       the one screen (takes no token)
+  ShellStartActivity the shell's fallback start with a token (DUMP)
   SmsDeliverReceiver, MmsDeliverReceiver, ComposeActivity, RespondService
                      what Android requires of a default SMS app
   Perms, Notes, L    permissions and the role, notifications, the log
@@ -58,8 +67,9 @@ dataSync if the limit hurts.
 `android:permission="android.permission.DUMP"`: the shell (and root) hold
 DUMP, apps cannot (it is signature/privileged/development). Even if
 something started it, only uid 2000/0 can connect. Fallback where Android
-refuses the start: `am start -n .../.MainActivity --ez listen true` starts
-it from the visible activity.
+refuses the start: `am start -n .../io.github.c0decave.axross.companion.ShellStartActivity
+--es token <64 hex>` starts it from an activity (translucent, finished at
+once) that is guarded by DUMP as well.
 
 **A token from the shell, a proof both ways (protocol 2).** The peer check
 protects the companion from apps, but not axross from an app that listens
@@ -69,17 +79,47 @@ any listener of that name). So each start of the service carries a token
 in `hello` that it holds it (HMAC-SHA256 over both nonces), and the client
 proves the same with `auth`. The tokens stay in memory, at most eight (a
 few axross windows or computers at a time), and are never logged.
-MainActivity passes a token on too, for phones where the shell may not
-start the service; as the launcher's activity any app can reach it, which
-lets an app push tokens out (axross then gives its own again), not learn
-or use one.
+0.1.1's MainActivity passed a token on too; as the launcher's activity any
+app could reach it and push the client's token out with eight of its own.
+Since 0.1.2 only ShellStartActivity (DUMP) does that.
 
-**Sends by client_ref.** A send whose answer was lost (the link broke)
-must not be sent twice when axross tries again: `SendTracker` remembers
-each send's `client_ref` for an hour, and `Sender` answers a known one with
-the first result instead of sending. The look-up, the rate limit and the
-registration are one step under the tracker's lock, so two requests with
-one `client_ref` at the same time make one send.
+**Sends by client_ref, on disk (revision 1).** A send whose answer was lost
+(the link broke) must not be sent twice when axross tries again, and
+axross must be able to tell "not sent" from "don't know" - also when the
+service stopped in between (five minutes after the last client, or killed
+by Android). So every accepted send goes into `SendStore` before a part of
+it is handed to SmsManager: `no_backup/sends.json`, written whole to a
+temporary file, fsync'd, renamed (a few hundred kB at most: the rate limit
+allows 2400 recipients a day, the store keeps a day). Android's reports
+(one PendingIntent per part and kind, with the store id, send id,
+recipient and part in its data URI, and a request code unique per send,
+recipient, part and kind) arrive at a receiver declared in the manifest,
+so Android starts the process for them when the service is gone; each goes
+into an append-only journal, one fsync'd line, replayed on the next start
+(a line carries a sequence number and sends.json the last one it holds, so
+a crash between the rename and the journal's removal replays nothing
+twice; parts are kept as bitmasks, so a report counted twice counts once).
+The store has a random id, named in `hello`: a store that was lost or
+could not be read is made anew with a new id, and the client then knows
+that "not_found" no longer means "not sent". The send ids count on from a
+random start per store, so they do not repeat across runs. "unknown" is a
+rule, not a guess: a recipient still "sending" an hour after acceptance
+stays "unknown", and later reports are ignored, so an answer never changes
+back.
+
+The registration of a `client_ref` as "being checked" happens on the
+session's reader thread, as the request is read (`Session.Handler.arrived`)
+- before it is queued for a worker - so an `sms.status` that the client
+sends after it can never be answered `not_found` for it. A second request
+with that `client_ref` waits for the first's answer, then answers the
+duplicate or the same error; a refusal ends the registration when its
+error is answered.
+
+**Exports paced by acks (revision 1).** `backup.export` with `window`
+waits, on its own worker thread, until the client acknowledged enough
+`backup.items`; the session's reader goes on, so a client that writes a
+large backup slowly still gets its pings and other answers. Without
+`window` the export is paced by the writer queue alone, as before.
 
 **One writer thread a session, a bounded queue.** A client that stops
 reading stalls no other session and no producer: live events are queued at

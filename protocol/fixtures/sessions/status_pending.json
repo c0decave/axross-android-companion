@@ -1,0 +1,293 @@
+{
+  "name": "status pending",
+  "description": "A client_ref is registered when its sms.send is read, before the checks (permission, SIM, parts, rate limit): sms.status by that client_ref while the send is checked says pending (send_id null, no recipients). A second sms.send with the same client_ref meanwhile waits for the first: it is answered after it, with its result and duplicate true. (The phone here takes its time: the first send is decided after the status was answered.)",
+  "phone": {
+    "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
+    "hello": {
+      "revision": 1,
+      "app": "axross-android-companion",
+      "app_version": "0.1.2",
+      "app_version_code": 102,
+      "package": "io.github.c0decave.axross.companion",
+      "android": {
+        "sdk_int": 34,
+        "release": "14",
+        "manufacturer": "Google",
+        "model": "sdk_gphone64_x86_64"
+      },
+      "capabilities": [
+        "contacts",
+        "contacts.photo",
+        "threads",
+        "messages",
+        "messages.search",
+        "message.mark_read",
+        "message.delete",
+        "sms.send",
+        "sms.status",
+        "mms.parts",
+        "mms.part_data",
+        "subscribe",
+        "subscriptions",
+        "backup.export",
+        "backup.restore",
+        "sms.refs",
+        "backup.ack"
+      ],
+      "limits": {
+        "max_frame": 16777216,
+        "max_request_json": 4194304,
+        "max_blob_in": 8388608,
+        "max_blobs_pending": 33554432,
+        "max_blob_out": 67108864,
+        "max_in_flight": 8,
+        "max_recipients": 10,
+        "max_text_chars": 5000,
+        "max_parts": 30,
+        "sends_per_minute": 20,
+        "sends_per_hour": 100,
+        "max_page": 500
+      },
+      "default_sms_app": false,
+      "permissions": {
+        "READ_SMS": true,
+        "SEND_SMS": true,
+        "RECEIVE_SMS": true,
+        "READ_CONTACTS": true,
+        "READ_PHONE_STATE": true,
+        "POST_NOTIFICATIONS": true
+      },
+      "sends": {
+        "store": "6feebacd6df89e21d7171200838883d5",
+        "keep_ms": 86400000
+      }
+    },
+    "sends": {
+      "next_send_id": 905531113
+    },
+    "answers": {
+      "sms.send": [
+        {
+          "result": {
+            "send_id": 905531113,
+            "recipients": [
+              {
+                "index": 0,
+                "address": "+15555215554",
+                "parts": 1
+              }
+            ],
+            "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a",
+            "duplicate": false
+          },
+          "wait_for": 5
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "client": {
+        "id": 1,
+        "method": "hello",
+        "params": {
+          "protocols": [
+            2
+          ],
+          "client": "axross",
+          "client_version": "0.15.186",
+          "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+          "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "protocol": 2,
+          "revision": 1,
+          "app": "axross-android-companion",
+          "app_version": "0.1.2",
+          "app_version_code": 102,
+          "package": "io.github.c0decave.axross.companion",
+          "android": {
+            "sdk_int": 34,
+            "release": "14",
+            "manufacturer": "Google",
+            "model": "sdk_gphone64_x86_64"
+          },
+          "capabilities": [
+            "contacts",
+            "contacts.photo",
+            "threads",
+            "messages",
+            "messages.search",
+            "message.mark_read",
+            "message.delete",
+            "sms.send",
+            "sms.status",
+            "mms.parts",
+            "mms.part_data",
+            "subscribe",
+            "subscriptions",
+            "backup.export",
+            "backup.restore",
+            "sms.refs",
+            "backup.ack"
+          ],
+          "limits": {
+            "max_frame": 16777216,
+            "max_request_json": 4194304,
+            "max_blob_in": 8388608,
+            "max_blobs_pending": 33554432,
+            "max_blob_out": 67108864,
+            "max_in_flight": 8,
+            "max_recipients": 10,
+            "max_text_chars": 5000,
+            "max_parts": 30,
+            "sends_per_minute": 20,
+            "sends_per_hour": 100,
+            "max_page": 500
+          },
+          "default_sms_app": false,
+          "permissions": {
+            "READ_SMS": true,
+            "SEND_SMS": true,
+            "RECEIVE_SMS": true,
+            "READ_CONTACTS": true,
+            "READ_PHONE_STATE": true,
+            "POST_NOTIFICATIONS": true
+          },
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000
+          },
+          "auth": {
+            "companion_nonce": "*",
+            "proof": "*"
+          }
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 2,
+        "method": "auth",
+        "params": {
+          "proof": "*"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 2,
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "client": {
+        "id": 3,
+        "method": "sms.send",
+        "params": {
+          "recipients": [
+            "+15555215554"
+          ],
+          "text": "Are you there?",
+          "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 4,
+        "method": "sms.send",
+        "params": {
+          "recipients": [
+            "+15555215554"
+          ],
+          "text": "Are you there?",
+          "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 5,
+        "method": "sms.status",
+        "params": {
+          "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 5,
+        "ok": true,
+        "result": {
+          "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a",
+          "send_id": null,
+          "recipients": [],
+          "pending": true,
+          "store": "6feebacd6df89e21d7171200838883d5"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 3,
+        "ok": true,
+        "result": "=phone"
+      }
+    },
+    {
+      "companion": {
+        "id": 4,
+        "ok": true,
+        "result": {
+          "send_id": 905531113,
+          "recipients": [
+            {
+              "index": 0,
+              "address": "+15555215554",
+              "parts": 1
+            }
+          ],
+          "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a",
+          "duplicate": true
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 6,
+        "method": "sms.status",
+        "params": {
+          "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 6,
+        "ok": true,
+        "result": {
+          "send_id": 905531113,
+          "recipients": [
+            {
+              "index": 0,
+              "address": "+15555215554",
+              "state": "sending",
+              "reason": null
+            }
+          ],
+          "client_ref": "5c2b8e1d-4f3a-4d6b-a9c7-0e1f2d3c4b5a",
+          "store": "6feebacd6df89e21d7171200838883d5",
+          "accepted": "*"
+        }
+      }
+    }
+  ]
+}

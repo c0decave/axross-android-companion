@@ -71,6 +71,20 @@ public final class RateLimiter {
         return 0;
     }
 
+    /**
+     * Counts {@code count} messages sent at {@code timeMs} (earlier sends:
+     * those of the send store, when the service starts again), in order.
+     */
+    public synchronized void record(long timeMs, int count) {
+        java.util.ArrayList<Long> all = new java.util.ArrayList<>(sent);
+        for (int i = 0; i < count; i++) {
+            all.add(timeMs);
+        }
+        java.util.Collections.sort(all);
+        sent.clear();
+        sent.addAll(all);
+    }
+
     private long nth(int index) {
         int i = 0;
         for (Long t : sent) {

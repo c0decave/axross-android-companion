@@ -11,6 +11,9 @@ Default: the source manifest. In CI also the merged one the build made
 - the components that are exported are exactly the list below, each with
   the permission that guards it (or none, for the launcher and the compose
   screen); every other component says exported="false";
+- only MainActivity is in the launcher (ShellStartActivity, which takes a
+  token, has no intent filter at all: only the shell, by its component
+  name, starts it);
 - no backup, no cleartext traffic, not debuggable (in the source).
 
 Exits 1 with one line per finding.
@@ -38,6 +41,7 @@ EXPORTED = {
     "MainActivity": None,
     "ComposeActivity": None,
     "CompanionService": "android.permission.DUMP",
+    "ShellStartActivity": "android.permission.DUMP",
     "SmsDeliverReceiver": "android.permission.BROADCAST_SMS",
     "MmsDeliverReceiver": "android.permission.BROADCAST_WAP_PUSH",
     "RespondService": "android.permission.SEND_RESPOND_VIA_MESSAGE",
@@ -85,6 +89,12 @@ def check(path, problems, source):
             else:
                 if exported != "false":
                     problems.append(f"{where}: {tag} {name} must say exported=\"false\"")
+            launcher = any(c.get(A + "name") == "android.intent.category.LAUNCHER"
+                           for f in e.iter("intent-filter") for c in f.iter("category"))
+            if launcher and name != "MainActivity":
+                problems.append(f"{where}: {name} is in the launcher")
+            if name == "ShellStartActivity" and e.find("intent-filter") is not None:
+                problems.append(f"{where}: ShellStartActivity has an intent filter")
     for name in sorted(set(EXPORTED) - seen):
         problems.append(f"{where}: {name} is missing")
 

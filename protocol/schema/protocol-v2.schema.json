@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://github.com/c0decave/axross-android-companion/blob/main/protocol/schema/protocol-v2.schema.json",
- "title": "axross companion protocol, version 2",
- "description": "The JSON frames of docs/PROTOCOL.md. The root validates any JSON frame (a request, a response or an event); x-methods maps each method to its params and result, x-events each event to its data, x-error-codes lists the error codes. Unknown fields are allowed everywhere (they are ignored).",
+ "title": "axross companion protocol, version 2 (revision 1)",
+ "description": "The JSON frames of docs/PROTOCOL.md. The root validates any JSON frame (a request, a response or an event); x-methods maps each method to its params and result, x-events each event to its data, x-error-codes lists the error codes. Unknown fields are allowed everywhere (they are ignored). Revision 1 (companion 0.1.2) adds fields, a method and a state that a client of revision 0 ignores: hello's revision and sends, sms.status's store, accepted and pending, client_ref in the sms.* events, backup.export's window and backup.ack.",
  "oneOf": [
   {
    "$ref": "#/$defs/Request"
@@ -15,6 +15,7 @@
   }
  ],
  "x-protocol-version": 2,
+ "x-protocol-revision": 1,
  "x-socket": "localabstract:axross-companion",
  "x-methods": {
   "hello": {
@@ -183,6 +184,14 @@
    },
    "result": {
     "$ref": "#/$defs/backup.cancel.result"
+   }
+  },
+  "backup.ack": {
+   "params": {
+    "$ref": "#/$defs/backup.ack.params"
+   },
+   "result": {
+    "$ref": "#/$defs/backup.ack.result"
    }
   },
   "backup.restore.begin": {
@@ -1090,6 +1099,11 @@
     "protocol": {
      "const": 2
     },
+    "revision": {
+     "description": "Additions within the protocol version: 1 for companion 0.1.2; absent (0) before.",
+     "type": "integer",
+     "minimum": 0
+    },
     "app": {
      "const": "axross-android-companion"
     },
@@ -1151,6 +1165,23 @@
      "required": [
       "companion_nonce",
       "proof"
+     ]
+    },
+    "sends": {
+     "description": "The send store (revision 1): its id and how long a send is kept after acceptance.",
+     "type": "object",
+     "properties": {
+      "store": {
+       "$ref": "#/$defs/StoreId"
+      },
+      "keep_ms": {
+       "type": "integer",
+       "minimum": 1
+      }
+     },
+     "required": [
+      "store",
+      "keep_ms"
      ]
     }
    },
@@ -1783,70 +1814,13 @@
    ]
   },
   "sms.status.result": {
-   "type": "object",
-   "properties": {
-    "send_id": {
-     "type": "integer",
-     "minimum": 1,
-     "maximum": 9223372036854775807
+   "oneOf": [
+    {
+     "$ref": "#/$defs/SendStatus"
     },
-    "recipients": {
-     "type": "array",
-     "items": {
-      "type": "object",
-      "properties": {
-       "index": {
-        "type": "integer",
-        "minimum": 0
-       },
-       "address": {
-        "type": "string"
-       },
-       "state": {
-        "enum": [
-         "sending",
-         "sent",
-         "failed",
-         "delivered",
-         "delivery_failed"
-        ]
-       },
-       "reason": {
-        "anyOf": [
-         {
-          "enum": [
-           "generic_failure",
-           "radio_off",
-           "null_pdu",
-           "no_service",
-           "limit_exceeded",
-           "fdn_check_failure",
-           "short_code_not_allowed",
-           "short_code_never_allowed",
-           "other"
-          ]
-         },
-         {
-          "type": "null"
-         }
-        ]
-       }
-      },
-      "required": [
-       "index",
-       "address",
-       "state",
-       "reason"
-      ]
-     }
-    },
-    "client_ref": {
-     "$ref": "#/$defs/ClientRef"
+    {
+     "$ref": "#/$defs/SendPending"
     }
-   },
-   "required": [
-    "send_id",
-    "recipients"
    ]
   },
   "mms.parts.params": {
@@ -1987,6 +1961,12 @@
     },
     "include_mms_data": {
      "type": "boolean"
+    },
+    "window": {
+     "description": "At most this many backup.items unacknowledged (revision 1).",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 64
     }
    }
   },
@@ -2183,6 +2163,9 @@
     },
     "address": {
      "type": "string"
+    },
+    "client_ref": {
+     "$ref": "#/$defs/ClientRef"
     }
    },
    "required": [
@@ -2221,6 +2204,9 @@
     },
     "result_code": {
      "type": "integer"
+    },
+    "client_ref": {
+     "$ref": "#/$defs/ClientRef"
     }
    },
    "required": [
@@ -2252,6 +2238,9 @@
       "pending",
       "failed"
      ]
+    },
+    "client_ref": {
+     "$ref": "#/$defs/ClientRef"
     }
    },
    "required": [
@@ -2370,6 +2359,145 @@
    "required": [
     "reason"
    ]
+  },
+  "StoreId": {
+   "description": "The send store's id: 128 random bits as 32 lowercase hex characters. A new one only when the store is new, lost or unreadable.",
+   "type": "string",
+   "pattern": "^[0-9a-f]{32}$",
+   "minLength": 32,
+   "maxLength": 32
+  },
+  "SendStatus": {
+   "description": "A send the store has.",
+   "type": "object",
+   "properties": {
+    "send_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "recipients": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "index": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "address": {
+        "type": "string"
+       },
+       "state": {
+        "enum": [
+         "sending",
+         "sent",
+         "failed",
+         "delivered",
+         "delivery_failed",
+         "unknown"
+        ]
+       },
+       "reason": {
+        "anyOf": [
+         {
+          "enum": [
+           "generic_failure",
+           "radio_off",
+           "null_pdu",
+           "no_service",
+           "limit_exceeded",
+           "fdn_check_failure",
+           "short_code_not_allowed",
+           "short_code_never_allowed",
+           "other"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "index",
+       "address",
+       "state",
+       "reason"
+      ]
+     }
+    },
+    "client_ref": {
+     "$ref": "#/$defs/ClientRef"
+    },
+    "store": {
+     "$ref": "#/$defs/StoreId"
+    },
+    "accepted": {
+     "description": "When the send was accepted (ms since the epoch, the phone's clock).",
+     "type": "integer",
+     "minimum": 0
+    },
+    "pending": {
+     "const": false
+    }
+   },
+   "required": [
+    "send_id",
+    "recipients"
+   ]
+  },
+  "SendPending": {
+   "description": "A send with this client_ref is still being checked (revision 1).",
+   "type": "object",
+   "properties": {
+    "client_ref": {
+     "$ref": "#/$defs/ClientRef"
+    },
+    "send_id": {
+     "type": "null"
+    },
+    "recipients": {
+     "type": "array",
+     "maxItems": 0
+    },
+    "pending": {
+     "const": true
+    },
+    "store": {
+     "$ref": "#/$defs/StoreId"
+    }
+   },
+   "required": [
+    "client_ref",
+    "send_id",
+    "recipients",
+    "pending",
+    "store"
+   ]
+  },
+  "backup.ack.params": {
+   "type": "object",
+   "properties": {
+    "export_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "seq": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "export_id",
+    "seq"
+   ]
+  },
+  "backup.ack.result": {
+   "type": "object",
+   "properties": {}
   }
  }
 }

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The app keeps nothing; and nothing of it is backed up or moved to
-     another device. -->
+<!-- Nothing of the app is backed up or moved to another device - also not
+     its send store (no_backup/sends.json, the numbers of the SMS it sent in
+     the last day): a store that came back from a backup would say that the
+     phone sent what a restored phone never sent. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="." />

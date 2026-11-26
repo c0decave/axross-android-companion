@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">axross companion</string>
     <string name="about">This app lets axross, the file manager on your computer, read your SMS, MMS and contacts and send SMS - over USB, through ADB, when you connect the phone and allow USB debugging.\n\nOnly a computer connected by ADB can talk to it; other apps on this phone cannot. It has no internet access. Every message it sends is one you wrote and sent in axross.</string>
-    <string name="privacy">This app keeps no data of its own, and nothing is logged of your messages, numbers or contacts. Source and licence: github.com/c0decave/axross-android-companion (Apache-2.0).</string>
+    <string name="privacy">This app keeps no messages or contacts of its own; for a day it remembers the SMS it sent for axross (the numbers and their state, never the text), so that a message is not sent twice. Nothing is logged of your messages, numbers or contacts. Source and licence: github.com/c0decave/axross-android-companion (Apache-2.0).</string>
     <string name="grant">Grant permissions</string>
     <string name="app_settings">App settings</string>
     <string name="listen">Start listening for axross</string>

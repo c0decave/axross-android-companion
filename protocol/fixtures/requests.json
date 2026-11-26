@@ -1,5 +1,5 @@
 {
-  "description": "Requests and what the companion's check of their parameters says (docs/PROTOCOL.md, sections 4 and 7): 'ok', or the error code (and, for bad_request, the field). hello's versions are checked first: a hello without a common version is unsupported_protocol, whatever else it has. These are the checks only: an 'ok' request can still fail on the phone (permission_denied, not_found, ...) or in the session (unknown_token, auth_failed). Unknown parameters are ignored.",
+  "description": "Requests and what the companion's check of their parameters says (docs/PROTOCOL.md, sections 4 and 7): 'ok', or the error code (and, for bad_request, the field). hello's versions are checked first: a hello without a common version is unsupported_protocol, whatever else it has. These are the checks only: an 'ok' request can still fail on the phone (permission_denied, not_found, ...) or in the session (unknown_token, auth_failed). Unknown parameters are ignored. Revision 1 (companion 0.1.2) adds backup.export's window and backup.ack.",
   "cases": [
     {
       "name": "hello",
@@ -1179,6 +1179,123 @@
         "export_id": 1
       },
       "expect": "ok"
+    },
+    {
+      "name": "export with a window",
+      "method": "backup.export",
+      "params": {
+        "window": 8
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "export with the smallest window",
+      "method": "backup.export",
+      "params": {
+        "window": 1
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "export with the largest window",
+      "method": "backup.export",
+      "params": {
+        "window": 64
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "export with window 0",
+      "method": "backup.export",
+      "params": {
+        "window": 0
+      },
+      "expect": "bad_request",
+      "field": "window"
+    },
+    {
+      "name": "export with window 65",
+      "method": "backup.export",
+      "params": {
+        "window": 65
+      },
+      "expect": "bad_request",
+      "field": "window"
+    },
+    {
+      "name": "export with a string window",
+      "method": "backup.export",
+      "params": {
+        "window": "8"
+      },
+      "expect": "bad_request",
+      "field": "window"
+    },
+    {
+      "name": "ack",
+      "method": "backup.ack",
+      "params": {
+        "export_id": 1,
+        "seq": 0
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "ack a later seq",
+      "method": "backup.ack",
+      "params": {
+        "export_id": 1,
+        "seq": 41
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "ack without seq",
+      "method": "backup.ack",
+      "params": {
+        "export_id": 1
+      },
+      "expect": "bad_request",
+      "field": "seq"
+    },
+    {
+      "name": "ack with a negative seq",
+      "method": "backup.ack",
+      "params": {
+        "export_id": 1,
+        "seq": -1
+      },
+      "expect": "bad_request",
+      "field": "seq"
+    },
+    {
+      "name": "ack with a fractional seq",
+      "method": "backup.ack",
+      "params": {
+        "export_id": 1,
+        "seq": 1.5
+      },
+      "expect": "bad_request",
+      "field": "seq"
+    },
+    {
+      "name": "ack without export_id",
+      "method": "backup.ack",
+      "params": {
+        "seq": 0
+      },
+      "expect": "bad_request",
+      "field": "export_id"
+    },
+    {
+      "name": "ack with export_id 0",
+      "method": "backup.ack",
+      "params": {
+        "export_id": 0,
+        "seq": 0
+      },
+      "expect": "bad_request",
+      "field": "export_id"
     },
     {
       "name": "restore begin",

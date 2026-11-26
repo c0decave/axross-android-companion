@@ -26,9 +26,11 @@ each is enforced.
   it has checked that proof, and proves itself with `auth` (a wrong proof
   closes the session). The tokens are kept in memory only (at most 8, gone
   when the service stops), never logged, compared in constant time
-  (`Tokens`, unit-tested). MainActivity, the launcher's and so reachable
-  by any app, also hands a token to the service: an app can push tokens
-  out that way (axross then gives its own again), but not read or use one.
+  (`Tokens`, unit-tested). Only the shell can hand the service a token:
+  directly, or through ShellStartActivity, which is guarded by DUMP as the
+  service is. MainActivity, the launcher's and so reachable by any app,
+  takes no token since 0.1.2 (0.1.1's took one, which let an app push the
+  client's token out with tokens of its own).
 - At most 4 sessions; the handshake (`hello` and `auth`) must be done
   within 10 s.
 
@@ -36,14 +38,15 @@ each is enforced.
 
 | Component | Exported | Guarded by | Why |
 |---|---|---|---|
-| MainActivity | yes | - | the launcher |
+| MainActivity | yes | - | the launcher; takes nothing from its intent (no token) |
 | CompanionService | yes | `android.permission.DUMP` | started by the shell (`am start-foreground-service --es token ...`); apps do not hold DUMP |
+| ShellStartActivity | yes | `android.permission.DUMP` | the shell's fallback start with a token (`am start ... --es token ...`); no intent filter, not in the launcher, no screen |
 | SmsDeliverReceiver | yes | `BROADCAST_SMS` | required of a default SMS app; only the system sends it |
 | MmsDeliverReceiver | yes | `BROADCAST_WAP_PUSH` | the same |
 | RespondService | yes | `SEND_RESPOND_VIA_MESSAGE` | the same; drops every request |
 | ComposeActivity | yes | - | required of a default SMS app (SENDTO); shows a text, reads nothing, sends nothing |
 | RestoreActivity | no | | opened from the app's own notification |
-| SmsStatusReceiver | no | | the app's own PendingIntents |
+| SmsStatusReceiver | no | | the app's own PendingIntents (in the manifest: they reach the send store also while the service does not run) |
 
 `SMS_RECEIVED` is registered at run time, with `BROADCAST_SMS` as the
 sender's permission, and only nudges a re-read of the store.
@@ -59,10 +62,15 @@ sender's permission, and only nudges a re-read of the store.
   no duplicates; text 1..5000 UTF-16 units, no NUL, no unpaired surrogate,
   at most 30 parts; `sub_id` an active subscription.
 - Rate limit, all sessions together, counted per recipient: 20 in any 60 s,
-  100 in any hour (`RateLimiter`, unit-tested).
-- A send asked for again with a `client_ref` accepted within the hour is
-  answered with the first send's result and not sent again (nor counted). Android's own limit (about
-  30 SMS in 30 minutes) asks the phone's user beyond that.
+  100 in any hour (`RateLimiter`, unit-tested); the sends in the send store
+  count, so a restart of the service does not reset it. Android's own limit
+  (about 30 SMS in 30 minutes) asks the phone's user beyond that.
+- Every accepted send is written to the send store before it is handed to
+  Android; a send that cannot be written is not sent (`internal`). A send
+  asked for again with a `client_ref` the store has (a day, across runs of
+  the service) is answered with the first send's result and not sent again
+  (nor counted); one asked for while the first is still checked waits for
+  it (`SendStore`, `SendTracker`, unit-tested).
 - Writes to the message store (delete, mark read, restore) only as the
   default SMS app, which only the user can make it; a restore also asks the
   user on the phone first.
@@ -85,7 +93,15 @@ itself returned).
   either; an unexpected exception is answered "internal" without its
   message. The smoke test checks the app's log lines for the number, the
   text it sent and its tokens.
-- The app keeps no data of its own (no files, no database, no backup:
-  `allowBackup="false"`, data extraction rules exclude everything). Send
-  results (with their client_ref) are kept in memory for an hour, the
-  tokens while the service runs.
+- The app keeps one file of its own (since 0.1.2): the **send store**,
+  `no_backup/sends.json` and `no_backup/sends.journal` in its private
+  storage. It holds, for each SMS the companion sent in the last day (at
+  most 5000), the client_ref, the send id, the recipients' numbers (as
+  normalized), the number of parts, the time and each recipient's state -
+  **never the text**. A send is dropped a day (plus an hour) after it was
+  accepted. Nothing is backed up or moved to another device
+  (`allowBackup="false"`, `no_backup/`, data extraction rules that exclude
+  everything); clearing the app's data or uninstalling it deletes the
+  store. The text of a send is held in memory only while the companion,
+  as the default SMS app, still has to store the sent message itself. The
+  tokens are kept in memory while the service runs.

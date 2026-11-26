@@ -30,7 +30,8 @@
         android:theme="@style/CompanionTheme"
         android:usesCleartextTraffic="false">
 
-        <!-- The one screen (the launcher's). -->
+        <!-- The one screen (the launcher's: any app may start it, so it
+             takes nothing from its intent - no token). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -40,6 +41,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Starts the service with a token where the shell may not start
+             the service itself (am start -n ...ShellStartActivity with the
+             token as the string extra "token"). Exported only to holders of DUMP (the shell,
+             no app); no screen, no launcher entry, finishes at once. -->
+        <activity
+            android:name=".ShellStartActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:permission="android.permission.DUMP"
+            android:taskAffinity=""
+            android:theme="@style/ShellStartTheme" />
 
         <!-- The restore question: opened from the app's own notification. -->
         <activity
@@ -57,7 +71,9 @@
             android:foregroundServiceType="dataSync"
             android:permission="android.permission.DUMP" />
 
-        <!-- The companion's own send results (its PendingIntents). -->
+        <!-- The companion's own send results (its PendingIntents): from the
+             manifest, so that they reach the send store also while the
+             service does not run. -->
         <receiver
             android:name=".SmsStatusReceiver"
             android:exported="false" />

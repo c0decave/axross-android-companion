@@ -4,9 +4,10 @@
   "phone": {
     "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
+      "revision": 1,
       "app": "axross-android-companion",
-      "app_version": "0.1.1",
-      "app_version_code": 101,
+      "app_version": "0.1.2",
+      "app_version_code": 102,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -29,7 +30,9 @@
         "subscribe",
         "subscriptions",
         "backup.export",
-        "backup.restore"
+        "backup.restore",
+        "sms.refs",
+        "backup.ack"
       ],
       "limits": {
         "max_frame": 16777216,
@@ -53,13 +56,20 @@
         "READ_CONTACTS": true,
         "READ_PHONE_STATE": true,
         "POST_NOTIFICATIONS": true
+      },
+      "sends": {
+        "store": "6feebacd6df89e21d7171200838883d5",
+        "keep_ms": 86400000
       }
+    },
+    "sends": {
+      "next_send_id": 734120988
     },
     "answers": {
       "sms.send": [
         {
           "result": {
-            "send_id": 1,
+            "send_id": 734120988,
             "recipients": [
               {
                 "index": 0,
@@ -74,34 +84,13 @@
             {
               "event": "sms.sent",
               "data": {
-                "send_id": 1,
+                "send_id": 734120988,
                 "index": 0,
-                "address": "+15555215554"
+                "address": "+15555215554",
+                "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10"
               }
             }
           ]
-        }
-      ],
-      "sms.status": [
-        {
-          "result": {
-            "send_id": 1,
-            "recipients": [
-              {
-                "index": 0,
-                "address": "+15555215554",
-                "state": "sent",
-                "reason": null
-              }
-            ],
-            "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10"
-          }
-        },
-        {
-          "error": {
-            "code": "not_found",
-            "message": "no such send (or older than an hour)"
-          }
         }
       ]
     }
@@ -128,9 +117,10 @@
         "ok": true,
         "result": {
           "protocol": 2,
+          "revision": 1,
           "app": "axross-android-companion",
-          "app_version": "0.1.1",
-          "app_version_code": 101,
+          "app_version": "0.1.2",
+          "app_version_code": 102,
           "package": "io.github.c0decave.axross.companion",
           "android": {
             "sdk_int": 34,
@@ -153,7 +143,9 @@
             "subscribe",
             "subscriptions",
             "backup.export",
-            "backup.restore"
+            "backup.restore",
+            "sms.refs",
+            "backup.ack"
           ],
           "limits": {
             "max_frame": 16777216,
@@ -177,6 +169,10 @@
             "READ_CONTACTS": true,
             "READ_PHONE_STATE": true,
             "POST_NOTIFICATIONS": true
+          },
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000
           },
           "auth": {
             "companion_nonce": "*",
@@ -219,7 +215,7 @@
         "id": 3,
         "ok": true,
         "result": {
-          "send_id": 1,
+          "send_id": 734120988,
           "recipients": [
             {
               "index": 0,
@@ -236,9 +232,10 @@
       "companion": {
         "event": "sms.sent",
         "data": {
-          "send_id": 1,
+          "send_id": 734120988,
           "index": 0,
-          "address": "+15555215554"
+          "address": "+15555215554",
+          "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10"
         }
       }
     },
@@ -260,7 +257,7 @@
         "id": 4,
         "ok": true,
         "result": {
-          "send_id": 1,
+          "send_id": 734120988,
           "recipients": [
             {
               "index": 0,
@@ -286,7 +283,20 @@
       "companion": {
         "id": 5,
         "ok": true,
-        "result": "=phone"
+        "result": {
+          "send_id": 734120988,
+          "recipients": [
+            {
+              "index": 0,
+              "address": "+15555215554",
+              "state": "sent",
+              "reason": null
+            }
+          ],
+          "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10",
+          "store": "6feebacd6df89e21d7171200838883d5",
+          "accepted": "*"
+        }
       }
     },
     {
@@ -313,7 +323,7 @@
         "id": 7,
         "method": "sms.status",
         "params": {
-          "send_id": 1,
+          "send_id": 734120988,
           "client_ref": "0b6f2c1e-7d4a-4e1b-9c3f-5a8e2d7b6c10"
         }
       }

@@ -188,11 +188,25 @@ public final class Requests {
         public final long threadId;
         public final boolean includeMms;
         public final boolean includeMmsData;
+        /** At most this many backup.items unacknowledged (1..64); 0: no flow control. */
+        public final int window;
 
-        Export(long threadId, boolean includeMms, boolean includeMmsData) {
+        Export(long threadId, boolean includeMms, boolean includeMmsData, int window) {
             this.threadId = threadId;
             this.includeMms = includeMms;
             this.includeMmsData = includeMmsData;
+            this.window = window;
+        }
+    }
+
+    /** backup.ack: every backup.items of the export up to and including seq. */
+    public static final class Ack {
+        public final long exportId;
+        public final long seq;
+
+        Ack(long exportId, long seq) {
+            this.exportId = exportId;
+            this.seq = seq;
         }
     }
 
@@ -303,9 +317,12 @@ public final class Requests {
                 return events(p, false);
             case "backup.export":
                 return new Export(p.has("thread_id") ? p.reqId("thread_id") : 0,
-                        p.optBool("include_mms", true), p.optBool("include_mms_data", true));
+                        p.optBool("include_mms", true), p.optBool("include_mms_data", true),
+                        p.optInt("window", 0, 1, Exports.MAX_WINDOW));
             case "backup.cancel":
                 return p.reqId("export_id");
+            case "backup.ack":
+                return new Ack(p.reqId("export_id"), p.reqLong("seq", 0, Params.MAX_ID));
             case "backup.restore.begin":
                 return new RestoreBegin((int) p.reqLong("sms_count", 1, 1_000_000), p.optString("source", 0, 100));
             case "backup.restore.chunk":

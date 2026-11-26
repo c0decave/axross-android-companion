@@ -21,6 +21,7 @@ companion and its client tests can use them too.
   "phone": {
     "token": "<64 hex>",
     "hello": { ...hello's result without "protocol" and "auth"... },
+    "sends": {"next_send_id": <n>, "earlier": [ <send>, ... ]},
     "answers": {
       "<method>": [ <answer>, <answer>, ... ]
     }
@@ -31,6 +32,15 @@ companion and its client tests can use them too.
 
 `token` is the token the service was started with (`--es token`).
 
+`sends` (optional; revision 1) is the phone's send store when the session
+starts: its id is `hello.sends.store`, `next_send_id` the id its next send
+gets (default 1), and `earlier` the sends an earlier run of the service
+accepted, oldest first, each `{"send_id", "client_ref" (or null),
+"age_ms" (how long ago it was accepted), "recipients": [{"address",
+"parts", "state", "reason"}]}`. A send older than `keep_ms` plus an hour
+is gone when the session starts; a recipient still `sending` an hour after
+acceptance is `unknown`.
+
 `answers` are what the phone side gives for a method that passed the
 checks, one per call in order. An answer is `{"result": {...}}` or
 `{"error": {"code", "message", "data"}}`, optionally with
@@ -38,18 +48,32 @@ checks, one per call in order. An answer is `{"result": {...}}` or
 - `"blob": {"key", "mime", "hex"}`: the blob is sent first, then the result
   with `result[key] = {"blob": <id>, "size": <n>, "mime": <mime>}`;
 - `"events": [{"event", "data", ["blobs_before": [{"blob", "hex"}]]}]`:
-  sent after the answer, in order, each event's blobs before it.
+  sent after the answer, in order, each event's blobs before it;
+- `"wait_for": <request id>`: the phone takes its time - this answer is
+  given only after the companion has answered that other request (to show
+  what happens meanwhile, e.g. `sms.status` saying `pending`).
 
 Requests that the checks refuse (`fixtures/requests.json`'s errors) never
 reach the phone and take no answer from the list.
 
-`sms.send`: a phone result is the companion's whole answer to a fresh send
-(`send_id`, `recipients`, `client_ref` when the request had one,
-`"duplicate": false`); the session's sends are numbered 1, 2, ... in their
-order, as a fresh service numbers them. An `sms.send` whose `client_ref` an
-earlier send of the session was accepted with takes no answer from the
-list: the companion answers it with that send's result and
-`"duplicate": true`, and sends none of its events.
+`sms.send`: a phone answer is the outcome of the phone's checks (SIM,
+permission, parts): an error, or the companion's whole answer to a fresh
+send (`send_id`, `recipients`, `client_ref` when the request had one,
+`"duplicate": false`). The sends are numbered from `sends.next_send_id` in
+their order. The answer's `events` are Android's reports on that send; each
+must be what the companion makes of them (with `client_ref` when the send
+had one), and they change what `sms.status` says. An `sms.send` whose
+`client_ref` the send store has (from this session, another, or an earlier
+run) takes no answer from the list: the companion answers it with that
+send's result and `"duplicate": true`, and sends none of its events; one
+whose `client_ref` an earlier request still checks waits for it and gets
+its result (`"duplicate": true`) or its error. `sms.status` takes no
+answers either: it is answered from the send store (`"accepted"`, the time
+of acceptance, is `"*"` in the expected frames).
+
+`backup.export`: with `window`, the answer's `backup.items` events go out
+only as `backup.ack`s let them; `backup.ack` and `backup.cancel` take no
+answers.
 
 Steps, in order:
 

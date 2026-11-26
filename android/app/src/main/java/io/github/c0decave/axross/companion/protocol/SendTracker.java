@@ -1,5 +1,6 @@
 package io.github.c0decave.axross.companion.protocol;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -9,19 +10,31 @@ import java.util.Map;
 
 /**
  * What became of each send (docs/PROTOCOL.md, "sms.send" and
- * "sms.status"): counts the parts' "sent" and "delivered" callbacks per
- * recipient and says which event is due; knows the sends by their
- * client_ref, so that a send asked for again is answered, not sent again.
- * Kept for an hour (and while the service runs).
+ * "sms.status"), over the {@link SendStore} on disk: the sends' results and
+ * states, the rate limit, and - in memory - the client_refs of sends that
+ * are still being checked and the sessions that get a send's events.
+ *
+ * <p>The order a send with a client_ref goes through:
+ * <ol>
+ *   <li>{@link #arrive}, on the session's reader thread as soon as the
+ *     request is parsed: the ref is "checking" (sms.status says
+ *     {@code "pending": true}) unless it is in the store already;</li>
+ *   <li>{@link #resolve}: a ref in the store is answered as a duplicate; a
+ *     ref another request is checking waits for that one's outcome and
+ *     then answers the duplicate, or the same refusal;</li>
+ *   <li>the checks (permission, SIM, the text's parts), then
+ *     {@link #accept}: the rate limit, and the send written to the store
+ *     before any part is handed to Android;</li>
+ *   <li>a refusal anywhere ends the registration when the error is answered
+ *     (the Call's {@code whenAnswered}), so that a later "not_found" means
+ *     "never accepted, not sent".</li>
+ * </ol>
  */
 public final class SendTracker {
-    public static final long KEEP_MS = 3_600_000L;
-
-    public static final String SENDING = "sending";
-    public static final String SENT = "sent";
-    public static final String FAILED = "failed";
-    public static final String DELIVERED = "delivered";
-    public static final String DELIVERY_FAILED = "delivery_failed";
+    /** How long a second request with the same client_ref waits for the first's outcome. */
+    public static final long WAIT_MS = 60_000L;
+    /** The sessions of this many sends are remembered (for their events). */
+    static final int MAX_ROUTES = 5000;
 
     /** Android's SmsManager results this protocol names (the rest is "other"). */
     public static String reason(int resultCode) {
@@ -55,38 +68,36 @@ public final class SendTracker {
         return status >= 0x20 ? "pending" : "complete";
     }
 
-    /** One recipient of a send. */
-    static final class Recipient {
-        final String address;
-        final int parts;
-        int sentParts;
-        int deliveredParts;
-        boolean deliveryFailed;
-        boolean deliveryPending;
-        String state = SENDING;
-        String reason;
+    /**
+     * A PendingIntent's request code for (send, recipient, part, sent or
+     * delivered): different for every one of some seven million sends in a
+     * row (2^32 / 600), as send ids are consecutive.
+     */
+    public static int requestCode(long sendId, int index, int part, boolean delivery) {
+        long perSend = 2L * Recipients.MAX_RECIPIENTS * TextRules.MAX_PARTS;
+        return (int) (sendId * perSend + (index * (long) TextRules.MAX_PARTS + part) * 2 + (delivery ? 1 : 0));
+    }
 
-        Recipient(String address, int parts) {
-            this.address = address;
-            this.parts = parts;
+    /** A request's hold on its client_ref while it is checked. */
+    static final class Claim {
+        final String ref;
+        /** This request checks the ref (others wait for it). */
+        boolean owner;
+        /** The request that checked the ref when this one arrived (this one waits for it). */
+        Claim first;
+        /** The owner's send is in the store. */
+        boolean accepted;
+        /** The owner's answer is out: those waiting for it go on. */
+        boolean done;
+        /** Why it was not accepted (when done and not accepted). */
+        RequestException refusal;
+
+        Claim(String ref) {
+            this.ref = ref;
         }
     }
 
-    static final class Send {
-        final long sessionId;
-        final long createdMs;
-        /** Or null. */
-        final String clientRef;
-        final List<Recipient> recipients = new ArrayList<>();
-
-        Send(long sessionId, long createdMs, String clientRef) {
-            this.sessionId = sessionId;
-            this.createdMs = createdMs;
-            this.clientRef = clientRef;
-        }
-    }
-
-    /** An event that is due, and for which session. */
+    /** An event that is due, and for which session (-1: none of this process). */
     public static final class Event {
         public final long sessionId;
         public final String name;
@@ -99,76 +110,189 @@ public final class SendTracker {
         }
     }
 
-    private final RateLimiter.Clock clock;
-    private final Map<Long, Send> sends = new LinkedHashMap<>();
-    /** client_ref -> send id, for the sends in {@link #sends}. */
-    private final Map<String, Long> refs = new HashMap<>();
-    private long nextId = 1;
+    private final SendStore store;
+    private final RateLimiter limiter;
+    /** client_ref -> the request checking it. */
+    private final Map<String, Claim> checking = new HashMap<>();
+    /** send id -> the session it came from (this process only). */
+    private final LinkedHashMap<Long, Long> routes = new LinkedHashMap<>();
 
-    public SendTracker(RateLimiter.Clock clock) {
-        this.clock = clock;
+    /** The limiter learns the store's sends of the last hour: the limit holds across service runs. */
+    public SendTracker(SendStore store, RateLimiter limiter) {
+        this.store = store;
+        this.limiter = limiter;
+        for (long[] s : store.acceptedWithin(3_600_000L)) {
+            limiter.record(s[0], (int) s[1]);
+        }
+    }
+
+    public SendStore store() {
+        return store;
     }
 
     /**
-     * sms.send once its checks have passed: a client_ref seen within the
-     * hour gives that send's result again, with "duplicate": true, and
-     * takes nothing from the rate limit; else the limiter must allow the
-     * messages and the send is registered.
-     *
-     * @return sms.send's result; send it (with "duplicate": false) or not
-     *     (true)
-     * @throws RequestException rate_limited
+     * sms.send has been parsed (the reader thread, before the request is
+     * queued): its client_ref is "checking" from now on, unless the store
+     * has it or another request checks it.
      */
-    public synchronized Map<String, Object> accept(long sessionId, String clientRef, List<String> addresses,
-            List<Integer> parts, RateLimiter limiter) throws RequestException {
-        Map<String, Object> earlier = duplicate(clientRef);
-        if (earlier != null) {
-            return earlier;
+    public void arrive(Session.Call call, String clientRef) {
+        if (clientRef == null) {
+            return;
         }
-        long wait = limiter.tryAcquire(addresses.size());
-        if (wait > 0) {
-            throw new RequestException(ErrorCode.RATE_LIMITED, "too many messages sent in a short time",
-                    Json.obj("retry_after_ms", wait));
+        Claim c = attach(call, clientRef);
+        synchronized (this) {
+            if (store.byRef(clientRef) == null) {
+                Claim first = checking.get(clientRef);
+                if (first == null) {
+                    checking.put(clientRef, c);
+                    c.owner = true;
+                } else {
+                    c.first = first;
+                }
+            }
         }
-        return result(start(sessionId, clientRef, addresses, parts), false);
     }
 
-    /** True for a result of {@link #accept} that is a duplicate (nothing to send). */
+    private Claim attach(final Session.Call call, String clientRef) {
+        final Claim c = new Claim(clientRef);
+        call.attach(c);
+        call.whenAnswered(new Runnable() {
+            @Override
+            public void run() {
+                settle(c, call.failure());
+            }
+        });
+        return c;
+    }
+
+    private static Claim claimOf(Session.Call call, String clientRef) {
+        Object a = call.attachment();
+        return a instanceof Claim && ((Claim) a).ref.equals(clientRef) ? (Claim) a : null;
+    }
+
+    /**
+     * Before the checks: the earlier send's result ("duplicate": true) when
+     * the store has the client_ref - after waiting for another request that
+     * still checks it - or null when this request is to check and send.
+     *
+     * @throws RequestException the other request's refusal, the same
+     */
+    public Map<String, Object> resolve(Session.Call call, String clientRef) throws RequestException {
+        if (clientRef == null) {
+            return null;
+        }
+        Claim mine = claimOf(call, clientRef);
+        if (mine == null) {
+            mine = attach(call, clientRef);
+        }
+        long deadline = System.currentTimeMillis() + WAIT_MS;
+        synchronized (this) {
+            while (true) {
+                if (mine.owner) {
+                    return null;
+                }
+                Claim first = mine.first;
+                mine.first = null;
+                if (first == null) {
+                    SendStore.Send s = store.byRef(clientRef);
+                    if (s != null) {
+                        return result(s, true);
+                    }
+                    first = checking.get(clientRef);
+                    if (first == null) {
+                        checking.put(clientRef, mine);
+                        mine.owner = true;
+                        return null;
+                    }
+                }
+                while (!first.done) {
+                    long left = deadline - System.currentTimeMillis();
+                    if (left <= 0) {
+                        throw new RequestException(ErrorCode.INTERNAL, "the first request with this client_ref did not end");
+                    }
+                    try {
+                        wait(left);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RequestException(ErrorCode.INTERNAL, "interrupted");
+                    }
+                }
+                if (first.refusal != null) {
+                    RequestException r = first.refusal;
+                    throw new RequestException(r.code, r.getMessage(), r.data == null ? null : new LinkedHashMap<>(r.data));
+                }
+                // (accepted: the store has it now)
+            }
+        }
+    }
+
+    /**
+     * The checks have passed: the rate limit, then the send written to the
+     * store. Returns sms.send's result ("duplicate": false); send it.
+     *
+     * @throws RequestException rate_limited; internal when the store
+     *     cannot be written (then nothing may be sent)
+     */
+    public Map<String, Object> accept(Session.Call call, String clientRef, long sessionId, List<String> addresses,
+            List<Integer> parts) throws RequestException {
+        Claim mine = clientRef == null ? null : claimOf(call, clientRef);
+        if (clientRef != null && (mine == null || !mine.owner)) {
+            throw new IllegalStateException("accept without resolve");
+        }
+        synchronized (this) {
+            long wait = limiter.tryAcquire(addresses.size());
+            if (wait > 0) {
+                throw new RequestException(ErrorCode.RATE_LIMITED, "too many messages sent in a short time",
+                        Json.obj("retry_after_ms", wait));
+            }
+            SendStore.Send s;
+            try {
+                s = store.add(clientRef, addresses, parts);
+            } catch (IOException e) {
+                throw new RequestException(ErrorCode.INTERNAL, "the send could not be recorded: not sent");
+            }
+            routes.put(s.id, sessionId);
+            for (Iterator<Long> it = routes.keySet().iterator(); routes.size() > MAX_ROUTES; ) {
+                it.next();
+                it.remove();
+            }
+            if (mine != null) {
+                // (those waiting go on when this answer is out: theirs come after it)
+                mine.accepted = true;
+                checking.remove(clientRef);
+            }
+            return result(s, false);
+        }
+    }
+
+    /** The request was answered: a claim not accepted by then was refused (with the answer's error). */
+    synchronized void settle(Claim c, RequestException failure) {
+        if (!c.owner || c.done) {
+            return;
+        }
+        c.done = true;
+        if (!c.accepted) {
+            c.refusal = failure != null ? failure : new RequestException(ErrorCode.INTERNAL, "not accepted");
+        }
+        if (checking.get(c.ref) == c) {
+            checking.remove(c.ref);
+        }
+        notifyAll();
+    }
+
+    /** True for a result of {@link #resolve} or {@link #accept} that is a duplicate (nothing to send). */
     public static boolean isDuplicate(Map<String, Object> result) {
         return Boolean.TRUE.equals(result.get("duplicate"));
     }
 
-    /** The result of the send with this client_ref ("duplicate": true), or null. */
-    public synchronized Map<String, Object> duplicate(String clientRef) {
-        expire();
-        Long id = clientRef == null ? null : refs.get(clientRef);
-        return id == null ? null : result(id, true);
-    }
-
-    /** Registers a send; returns its id. */
-    public synchronized long start(long sessionId, String clientRef, List<String> addresses, List<Integer> parts) {
-        expire();
-        long id = nextId++;
-        Send s = new Send(sessionId, clock.nowMs(), clientRef);
-        for (int i = 0; i < addresses.size(); i++) {
-            s.recipients.add(new Recipient(addresses.get(i), parts.get(i)));
-        }
-        sends.put(id, s);
-        if (clientRef != null) {
-            refs.put(clientRef, id);
-        }
-        return id;
-    }
-
-    /** sms.send's result for a registered send. */
-    private Map<String, Object> result(long sendId, boolean duplicate) {
-        Send s = sends.get(sendId);
+    /** sms.send's result for a recorded send. */
+    private static Map<String, Object> result(SendStore.Send s, boolean duplicate) {
         List<Object> list = new ArrayList<>();
-        for (int i = 0; i < s.recipients.size(); i++) {
-            Recipient r = s.recipients.get(i);
+        for (int i = 0; i < s.size(); i++) {
+            SendStore.Recipient r = s.recipient(i);
             list.add(Json.obj("index", (long) i, "address", r.address, "parts", (long) r.parts));
         }
-        Map<String, Object> out = Json.obj("send_id", sendId, "recipients", list);
+        Map<String, Object> out = Json.obj("send_id", s.id, "recipients", list);
         if (s.clientRef != null) {
             out.put("client_ref", s.clientRef);
         }
@@ -176,100 +300,73 @@ public final class SendTracker {
         return out;
     }
 
-    /** A part's "sent" callback. Returns the event that is due, or null. */
-    public synchronized Event onSent(long sendId, int index, boolean ok, int resultCode) {
-        Recipient r = recipient(sendId, index);
-        if (r == null || !SENDING.equals(r.state)) {
+    // -- Android's reports ------------------------------------------------------------------
+
+    /**
+     * A part's "sent" report, from the PendingIntent of store {@code storeId}
+     * (one of another store - the app's data were cleared since - is
+     * ignored). Returns the event that is due, or null.
+     */
+    public Event onSent(String storeId, long sendId, int index, int part, boolean ok, int resultCode) {
+        if (!store.id().equals(storeId)) {
             return null;
         }
-        long session = sends.get(sendId).sessionId;
-        if (!ok) {
-            r.state = FAILED;
-            r.reason = reason(resultCode);
-            return new Event(session, "sms.failed", Json.obj("send_id", sendId, "index", (long) index,
-                    "address", r.address, "reason", r.reason, "result_code", (long) resultCode));
-        }
-        r.sentParts++;
-        if (r.sentParts < r.parts) {
+        return route(store.sent(sendId, index, part, ok, resultCode));
+    }
+
+    /** A part's delivery report ({@code status}: "complete", "pending", "failed"). */
+    public Event onDelivered(String storeId, long sendId, int index, int part, String status) {
+        if (!store.id().equals(storeId)) {
             return null;
         }
-        r.state = SENT;
-        return new Event(session, "sms.sent", Json.obj("send_id", sendId, "index", (long) index, "address", r.address));
+        return route(store.delivered(sendId, index, part, status));
+    }
+
+    private synchronized Event route(SendStore.Event e) {
+        if (e == null) {
+            return null;
+        }
+        Long session = routes.get(e.send.id);
+        return new Event(session == null ? -1 : session, e.name, e.data);
+    }
+
+    // -- sms.status -------------------------------------------------------------------------
+
+    /** sms.status by send_id, or null (not_found). */
+    public Map<String, Object> status(long sendId) {
+        SendStore.Send s = store.byId(sendId);
+        return s == null ? null : status(s);
     }
 
     /**
-     * A part's delivery report: {@code status} is "complete", "pending" or
-     * "failed". Returns the event when all parts have reported (or one
-     * failed).
+     * sms.status by client_ref: the send; {@code "pending": true} while a
+     * request with it is being checked; null (not_found) when the store has
+     * no send with it - it was never accepted.
      */
-    public synchronized Event onDelivered(long sendId, int index, String status) {
-        Recipient r = recipient(sendId, index);
-        if (r == null || DELIVERED.equals(r.state) || DELIVERY_FAILED.equals(r.state) || FAILED.equals(r.state)) {
-            return null;
+    public synchronized Map<String, Object> status(String clientRef) {
+        SendStore.Send s = store.byRef(clientRef);
+        if (s != null) {
+            return status(s);
         }
-        long session = sends.get(sendId).sessionId;
-        if ("failed".equals(status)) {
-            r.state = DELIVERY_FAILED;
-            return new Event(session, "sms.delivered", Json.obj("send_id", sendId, "index", (long) index,
-                    "address", r.address, "status", "failed"));
+        if (checking.containsKey(clientRef)) {
+            return Json.obj("client_ref", clientRef, "send_id", null, "recipients", new ArrayList<Object>(),
+                    "pending", true, "store", store.id());
         }
-        if ("pending".equals(status)) {
-            r.deliveryPending = true;
-            return null;
-        }
-        r.deliveredParts++;
-        if (r.deliveredParts < r.parts) {
-            return null;
-        }
-        r.state = DELIVERED;
-        return new Event(session, "sms.delivered", Json.obj("send_id", sendId, "index", (long) index,
-                "address", r.address, "status", "complete"));
+        return null;
     }
 
-    /** sms.status's result, or null when the send is unknown (or older than an hour). */
-    public synchronized Map<String, Object> status(long sendId) {
-        expire();
-        Send s = sends.get(sendId);
-        if (s == null) {
-            return null;
-        }
+    private Map<String, Object> status(SendStore.Send s) {
         List<Object> list = new ArrayList<>();
-        for (int i = 0; i < s.recipients.size(); i++) {
-            Recipient r = s.recipients.get(i);
-            list.add(Json.obj("index", (long) i, "address", r.address, "state", r.state, "reason", r.reason));
+        for (int i = 0; i < s.size(); i++) {
+            list.add(Json.obj("index", (long) i, "address", s.recipient(i).address,
+                    "state", store.state(s, i), "reason", store.reason(s, i)));
         }
-        Map<String, Object> out = Json.obj("send_id", sendId, "recipients", list);
+        Map<String, Object> out = Json.obj("send_id", s.id, "recipients", list);
         if (s.clientRef != null) {
             out.put("client_ref", s.clientRef);
         }
+        out.put("store", store.id());
+        out.put("accepted", s.accepted);
         return out;
-    }
-
-    /** sms.status by client_ref; null when no send had it (within the hour). */
-    public synchronized Map<String, Object> status(String clientRef) {
-        expire();
-        Long id = refs.get(clientRef);
-        return id == null ? null : status(id);
-    }
-
-    private Recipient recipient(long sendId, int index) {
-        Send s = sends.get(sendId);
-        if (s == null || index < 0 || index >= s.recipients.size()) {
-            return null;
-        }
-        return s.recipients.get(index);
-    }
-
-    private void expire() {
-        long now = clock.nowMs();
-        for (Iterator<Send> it = sends.values().iterator(); it.hasNext(); ) {
-            Send s = it.next();
-            if (s.createdMs < now - KEEP_MS) {
-                it.remove();
-                if (s.clientRef != null) {
-                    refs.remove(s.clientRef);
-                }
-            }
-        }
     }
 }

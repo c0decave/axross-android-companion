@@ -15,12 +15,13 @@ import io.github.c0decave.axross.companion.protocol.Protocol;
 /**
  * The one screen: what the app is, the permissions and their state (with a
  * button to ask for the missing ones), whether it is the default SMS app,
- * whether the service listens. {@code --ez listen true} (from axross over
- * ADB) also starts the service, and hands it {@code --es token <64 hex>}
- * when given.
+ * whether the service listens. It is the launcher's, and so exported: any
+ * app may start it. It therefore takes nothing from its intent - no token,
+ * no "listen" (since 0.1.2); its button starts the service without a token.
+ * The shell gives tokens to the service directly, or through
+ * {@link ShellStartActivity}, which only the shell may start.
  */
 public final class MainActivity extends Activity {
-    static final String EXTRA_LISTEN = "listen";
     private static final int REQUEST_PERMISSIONS = 1;
 
     private TextView state;
@@ -70,7 +71,7 @@ public final class MainActivity extends Activity {
         Button listen = new Button(this);
         listen.setText(R.string.listen);
         listen.setOnClickListener(v -> {
-            startListening(null);
+            startListening();
             state.postDelayed(this::refresh, 500);
         });
         box.addView(listen);
@@ -84,39 +85,11 @@ public final class MainActivity extends Activity {
         scroll.setFitsSystemWindows(true);
         scroll.addView(box);
         setContentView(scroll);
-
-        onListenIntent(getIntent());
     }
 
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        onListenIntent(intent);
-    }
-
-    /** {@code --ez listen true [--es token <64 hex>]}: the token goes to the service. */
-    private void onListenIntent(Intent intent) {
-        boolean listen;
-        String token;
-        try {
-            listen = intent.getBooleanExtra(EXTRA_LISTEN, false);
-            token = intent.getStringExtra(CompanionService.EXTRA_TOKEN);
-        } catch (RuntimeException e) {
-            // (extras that do not unparcel)
-            return;
-        }
-        // (not kept with the activity's intent)
-        intent.removeExtra(CompanionService.EXTRA_TOKEN);
-        if (listen) {
-            startListening(token);
-        }
-    }
-
-    private void startListening(String token) {
+    /** The button: the service listens (a client still needs a token from the shell). */
+    private void startListening() {
         Intent start = new Intent(this, CompanionService.class);
-        if (token != null) {
-            start.putExtra(CompanionService.EXTRA_TOKEN, token);
-        }
         try {
             startForegroundService(start);
         } catch (RuntimeException e) {

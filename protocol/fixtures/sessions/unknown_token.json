@@ -4,9 +4,10 @@
   "phone": {
     "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
+      "revision": 1,
       "app": "axross-android-companion",
-      "app_version": "0.1.1",
-      "app_version_code": 101,
+      "app_version": "0.1.2",
+      "app_version_code": 102,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -29,7 +30,9 @@
         "subscribe",
         "subscriptions",
         "backup.export",
-        "backup.restore"
+        "backup.restore",
+        "sms.refs",
+        "backup.ack"
       ],
       "limits": {
         "max_frame": 16777216,
@@ -53,6 +56,10 @@
         "READ_CONTACTS": true,
         "READ_PHONE_STATE": true,
         "POST_NOTIFICATIONS": true
+      },
+      "sends": {
+        "store": "6feebacd6df89e21d7171200838883d5",
+        "keep_ms": 86400000
       }
     },
     "answers": {}

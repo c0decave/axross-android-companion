@@ -1,12 +1,13 @@
 {
   "name": "send",
-  "description": "An SMS to one recipient (with a client_ref): the answer, then sms.sent and sms.delivered; refusals by the check (too many recipients, a bad number) and by the phone (rate limit, not the default SMS app for a delete).",
+  "description": "An SMS to one recipient (with a client_ref): the answer, then sms.sent and sms.delivered, both naming the client_ref; sms.status from the send store (with the store's id and the time of acceptance); refusals by the check (too many recipients, a bad number) and by the phone (rate limit, not the default SMS app for a delete).",
   "phone": {
     "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
+      "revision": 1,
       "app": "axross-android-companion",
-      "app_version": "0.1.1",
-      "app_version_code": 101,
+      "app_version": "0.1.2",
+      "app_version_code": 102,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -29,7 +30,9 @@
         "subscribe",
         "subscriptions",
         "backup.export",
-        "backup.restore"
+        "backup.restore",
+        "sms.refs",
+        "backup.ack"
       ],
       "limits": {
         "max_frame": 16777216,
@@ -53,13 +56,20 @@
         "READ_CONTACTS": true,
         "READ_PHONE_STATE": true,
         "POST_NOTIFICATIONS": true
+      },
+      "sends": {
+        "store": "6feebacd6df89e21d7171200838883d5",
+        "keep_ms": 86400000
       }
+    },
+    "sends": {
+      "next_send_id": 1209435167
     },
     "answers": {
       "sms.send": [
         {
           "result": {
-            "send_id": 1,
+            "send_id": 1209435167,
             "recipients": [
               {
                 "index": 0,
@@ -74,18 +84,20 @@
             {
               "event": "sms.sent",
               "data": {
-                "send_id": 1,
+                "send_id": 1209435167,
                 "index": 0,
-                "address": "+15555215554"
+                "address": "+15555215554",
+                "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"
               }
             },
             {
               "event": "sms.delivered",
               "data": {
-                "send_id": 1,
+                "send_id": 1209435167,
                 "index": 0,
                 "address": "+15555215554",
-                "status": "complete"
+                "status": "complete",
+                "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"
               }
             }
           ]
@@ -97,22 +109,6 @@
             "data": {
               "retry_after_ms": 41000
             }
-          }
-        }
-      ],
-      "sms.status": [
-        {
-          "result": {
-            "send_id": 1,
-            "recipients": [
-              {
-                "index": 0,
-                "address": "+15555215554",
-                "state": "delivered",
-                "reason": null
-              }
-            ],
-            "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"
           }
         }
       ],
@@ -151,9 +147,10 @@
         "ok": true,
         "result": {
           "protocol": 2,
+          "revision": 1,
           "app": "axross-android-companion",
-          "app_version": "0.1.1",
-          "app_version_code": 101,
+          "app_version": "0.1.2",
+          "app_version_code": 102,
           "package": "io.github.c0decave.axross.companion",
           "android": {
             "sdk_int": 34,
@@ -176,7 +173,9 @@
             "subscribe",
             "subscriptions",
             "backup.export",
-            "backup.restore"
+            "backup.restore",
+            "sms.refs",
+            "backup.ack"
           ],
           "limits": {
             "max_frame": 16777216,
@@ -200,6 +199,10 @@
             "READ_CONTACTS": true,
             "READ_PHONE_STATE": true,
             "POST_NOTIFICATIONS": true
+          },
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000
           },
           "auth": {
             "companion_nonce": "*",
@@ -250,9 +253,10 @@
       "companion": {
         "event": "sms.sent",
         "data": {
-          "send_id": 1,
+          "send_id": 1209435167,
           "index": 0,
-          "address": "+15555215554"
+          "address": "+15555215554",
+          "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"
         }
       }
     },
@@ -260,10 +264,11 @@
       "companion": {
         "event": "sms.delivered",
         "data": {
-          "send_id": 1,
+          "send_id": 1209435167,
           "index": 0,
           "address": "+15555215554",
-          "status": "complete"
+          "status": "complete",
+          "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41"
         }
       }
     },
@@ -272,7 +277,7 @@
         "id": 4,
         "method": "sms.status",
         "params": {
-          "send_id": 1
+          "send_id": 1209435167
         }
       }
     },
@@ -280,7 +285,20 @@
       "companion": {
         "id": 4,
         "ok": true,
-        "result": "=phone"
+        "result": {
+          "send_id": 1209435167,
+          "recipients": [
+            {
+              "index": 0,
+              "address": "+15555215554",
+              "state": "delivered",
+              "reason": null
+            }
+          ],
+          "client_ref": "6f1c2a4e-9b0d-4c7e-8a35-2d1f0e9b7c41",
+          "store": "6feebacd6df89e21d7171200838883d5",
+          "accepted": "*"
+        }
       }
     },
     {
