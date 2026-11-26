@@ -30,18 +30,34 @@ annotate() { # level title message (message: newlines kept)
     echo "::$1 title=$2::$msg"
 }
 
+# Gradle, with what went wrong as an annotation when it fails (logs may be
+# out of reach). gradle_run NAME FATAL ARGS...
+gradle_run() {
+    local name=$1 fatal=$2 log="$RUNNER_TEMP/gradle-$1.log"
+    shift 2
+    set +e
+    "${GRADLE[@]}" "$@" 2>&1 | tee "$log"
+    local status=${PIPESTATUS[0]}
+    set -e
+    if [ "$status" -ne 0 ]; then
+        local why
+        why=$(awk '/^\* What went wrong:/{on=1} /^\* Try:/{on=0} on' "$log" | head -c 3800)
+        [ -n "$why" ] || why=$(grep -E 'FAILED|error:|Error' "$log" | tail -30 | head -c 3800)
+        annotate "$([ "$fatal" = 1 ] && echo error || echo warning)" "gradle $name" "$why"
+        [ "$fatal" = 1 ] && exit "$status"
+    fi
+    return 0
+}
+
 if [ -f "$METADATA" ]; then
     echo "dependency verification: $METADATA (enforced)"
 else
     echo "dependency verification: no $METADATA yet (written at the end of this job)"
 fi
 
-"${GRADLE[@]}" testDebugUnitTest
-"${GRADLE[@]}" assembleDebug
-
-if ! "${GRADLE[@]}" lintDebug; then
-    annotate warning "lint" "lintDebug failed (not fatal yet)"
-fi
+gradle_run tests 1 testDebugUnitTest
+gradle_run apk 1 assembleDebug
+gradle_run lint 0 lintDebug
 LINT_XML=$(find android/app/build/reports -name 'lint-results-debug.xml' | head -1 || true)
 if [ -n "$LINT_XML" ]; then
     python3 -I - "$LINT_XML" <<'EOF'
