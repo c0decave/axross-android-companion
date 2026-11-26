@@ -3,18 +3,23 @@
 #   scripts/smoke_test.sh path/to/app-debug.apk [output-dir]
 #
 # What axross does, the same way: install the APK, grant the permissions
-# with `pm grant`, start the service with `am start-foreground-service`,
-# `adb forward` a TCP port to localabstract:axross-companion - then the
-# reference client (scripts/ci/companion_client.py) on this side: hello,
-# status, SIMs, contacts and threads (empty is fine), the refusals (too
-# many recipients, a bad number, before hello, a broken frame, delete
-# without being the default SMS app), and an SMS to the emulator's own
-# number: the sms.sent event must arrive; the SMS coming back
-# (message.received), it being found in a thread and by search, are
-# checked and reported.
+# with `pm grant`, start the service with `am start-foreground-service
+# --es token <a fresh token>`, `adb forward` a TCP port to
+# localabstract:axross-companion - then the reference client
+# (scripts/ci/companion_client.py) on this side: the handshake with that
+# token (hello with the companion's proof, auth), status, SIMs, contacts and
+# threads (empty is fine), the refusals (too many recipients, a bad number,
+# before hello, a version-1 hello, an unknown token, a wrong proof, a
+# request before auth, a broken frame, delete without being the default SMS
+# app), and an SMS to the emulator's own number, asked for twice with one
+# client_ref: one send, the sms.sent event must arrive, sms.status by
+# client_ref; the SMS coming back (message.received), it being found in a
+# thread and by search, are checked and reported. Then eight more tokens
+# push the first one out (unknown_token) and the newest works.
 #
 # Afterwards: the app's process is still alive, its log has no crash, and
-# its own log lines carry neither the text sent nor the number (privacy).
+# its own log lines carry neither the text sent, nor the number, nor a
+# token (privacy).
 #
 # Leaves logcat.txt, app-log.txt and smoke-client.json in the output directory.
 set -u
@@ -82,14 +87,23 @@ for p in $PERMISSIONS; do
 done
 say "granted: $PERMISSIONS"
 
+new_token() { python3 -I -c 'import secrets; print(secrets.token_hex(32))'; }
+# The service is given a token on every start (docs/PROTOCOL.md, section 4).
+start_service() { # token
+    local started
+    started=$(adb shell am start-foreground-service -n "$PACKAGE/$CLASSES.CompanionService" --es token "$1" 2>&1 | tr -d '\r')
+    echo "$started" | grep -v -e "$1"
+    if echo "$started" | grep -qi "error"; then
+        echo "::warning title=smoke test::am start-foreground-service was refused; starting through the activity (--ez listen true)"
+        adb shell am start -W -n "$PACKAGE/$CLASSES.MainActivity" --ez listen true --es token "$1" | grep -v -e "$1"
+    fi
+}
+TOKEN=$(new_token)
+TOKENS="$TOKEN"
+
 adb logcat -c
-say "starting the service (am start-foreground-service)"
-STARTED=$(adb shell am start-foreground-service -n "$PACKAGE/$CLASSES.CompanionService" 2>&1 | tr -d '\r')
-echo "$STARTED"
-if echo "$STARTED" | grep -qi "error"; then
-    echo "::warning title=smoke test::am start-foreground-service was refused; starting through the activity (--ez listen true)"
-    adb shell am start -W -n "$PACKAGE/$CLASSES.MainActivity" --ez listen true
-fi
+say "starting the service (am start-foreground-service --es token)"
+start_service "$TOKEN"
 
 waited=0
 until app_log | grep -q "listening on localabstract"; do
@@ -105,9 +119,31 @@ adb forward "tcp:$PORT" localabstract:axross-companion || { say "adb forward fai
 # (--inject: an incoming SMS from the emulator's console while the client is
 # subscribed - the message.received check that does not depend on the
 # modem looping our own send back)
-python3 -I "$HERE/ci/companion_client.py" --port "$PORT" smoke --sms-to "$NUMBER" --out "$OUT" \
+python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$TOKEN" smoke --sms-to "$NUMBER" --out "$OUT" \
     --inject "adb emu sms send 15550001234 {text}"
 result=$?
+
+# eight more tokens: the first is pushed out, the newest works
+for i in 1 2 3 4 5 6 7 8; do
+    LAST=$(new_token)
+    TOKENS="$TOKENS $LAST"
+    start_service "$LAST" > /dev/null
+done
+sleep 2
+GOT=$(python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$TOKEN" call ping 2>&1)
+if echo "$GOT" | grep -q '"unknown_token"'; then
+    say "ok   the first token, after eight more: unknown_token"
+else
+    say "FAIL the first token, after eight more: expected unknown_token, got: $(echo "$GOT" | head -c 300)"
+    result=1
+fi
+GOT=$(python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$LAST" call ping 2>&1)
+if echo "$GOT" | grep -q '"time"'; then
+    say "ok   the newest token works"
+else
+    say "FAIL the newest token: $(echo "$GOT" | head -c 300)"
+    result=1
+fi
 
 if [ "$(app_pid)" != "$PID" ]; then
     say "FAIL the app's process died or was started again during the test"
@@ -122,6 +158,12 @@ if app_log | grep -q -e "axross companion smoke" -e "$NUMBER" -e "${NUMBER#1}" -
     say "FAIL the app's log carries the text or the number"
     result=1
 fi
+for t in $TOKENS; do
+    if app_log | grep -q -e "$t" -e "${t:0:16}"; then
+        say "FAIL the app's log carries a token"
+        result=1
+    fi
+done
 
 # the idle stop is five minutes: not waited for; a clean stop is
 adb shell am stopservice -n "$PACKAGE/$CLASSES.CompanionService" >/dev/null 2>&1 || true

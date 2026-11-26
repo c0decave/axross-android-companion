@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
-"""A small client of the axross companion protocol (docs/PROTOCOL.md).
+"""A small client of the axross companion protocol, version 2 (docs/PROTOCOL.md).
 
 Python 3, standard library only. It is the emulator smoke test's client
-and a reference for other clients (the codec is the first fifty lines).
+and a reference for other clients (the codec is the first fifty lines, the
+handshake is Connection.hello).
 
+    TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+    adb shell am start-foreground-service -n io.github.c0decave.axross.companion/io.github.c0decave.axross.companion.CompanionService --es token $TOKEN
     adb forward tcp:38999 localabstract:axross-companion
-    python3 -I scripts/ci/companion_client.py --port 38999 call hello
-    python3 -I scripts/ci/companion_client.py --port 38999 call threads.list '{"limit": 5}'
-    python3 -I scripts/ci/companion_client.py --port 38999 smoke --sms-to 15555215554 --out smoke-output
+    python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN call hello
+    python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN call threads.list '{"limit": 5}'
+    python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN smoke --sms-to 15555215554 --out smoke-output
 
-The smoke test prints counts and codes, never message text or numbers
-beyond the one it sends to.
+The token is the one the service was started with (--es token); the
+client proves that it holds it, and checks that the companion does. The
+smoke test prints counts and codes, never message text, numbers beyond the
+one it sends to, the token, nonces or proofs.
 """
 import argparse
+import hashlib
+import hmac
 import json
 import os
+import re
 import secrets
 import shlex
 import socket
@@ -31,6 +39,10 @@ MAX_LENGTH = 16 * 1024 * 1024
 
 class ProtocolError(Exception):
     """The stream is broken (bad length, kind or blob chunk; end inside a frame)."""
+
+
+class NotTheCompanion(Exception):
+    """hello's proof is wrong or missing: something else answers on the socket."""
 
 
 class CompanionError(Exception):
@@ -79,6 +91,21 @@ def parse_frame(buf):
     if blob_id == 0 or flags & ~FLAG_LAST:
         raise ProtocolError("bad blob chunk")
     return ("blob", blob_id, bool(flags & FLAG_LAST), payload[5:]), 4 + length
+
+
+def token_id(token):
+    """The token's id: the first 32 hex characters of SHA-256 of its 64 characters."""
+    return hashlib.sha256(token.encode("ascii")).hexdigest()[:32]
+
+
+def proof(token, role, first_nonce, second_nonce):
+    """HMAC-SHA256 (key: the token's characters) of "axross-companion-2 <role> <a> <b>"."""
+    message = f"axross-companion-2 {role} {first_nonce} {second_nonce}".encode("utf-8")
+    return hmac.new(token.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def is_hex(value, length):
+    return isinstance(value, str) and re.fullmatch(f"[0-9a-f]{{{length}}}", value) is not None
 
 
 def parse_frames(data):
@@ -172,9 +199,27 @@ class Connection:
     def call(self, method, params=None, timeout=30.0):
         return self.wait_response(self.send(method, params), timeout)
 
-    def hello(self, client_version="smoke"):
-        self.hello_result = self.call("hello", {"protocols": [1], "client": "axross-companion-smoke", "client_version": client_version})
-        return self.hello_result
+    def hello(self, token, client_version="smoke", auth=True):
+        """The handshake: hello (its proof checked), then auth (unless auth is False).
+
+        Raises CompanionError (unknown_token, unsupported_protocol, ...) or
+        NotTheCompanion (a wrong or missing proof: nothing else is sent).
+        """
+        client_nonce = secrets.token_hex(32)
+        result = self.call("hello", {"protocols": [2], "client": "axross-companion-smoke", "client_version": client_version,
+                                     "client_nonce": client_nonce, "token_id": token_id(token)})
+        a = result.get("auth")
+        companion_nonce = a.get("companion_nonce") if isinstance(a, dict) else None
+        got = a.get("proof") if isinstance(a, dict) else None
+        if not is_hex(companion_nonce, 64) or not is_hex(got, 64) or \
+                not hmac.compare_digest(got, proof(token, "companion", client_nonce, companion_nonce)):
+            self.close()
+            raise NotTheCompanion("hello's proof is wrong: something else answers on the companion's socket")
+        self.hello_result = result
+        self.client_proof = proof(token, "client", companion_nonce, client_nonce)
+        if auth:
+            self.call("auth", {"proof": self.client_proof})
+        return result
 
     def wait_event(self, accept, timeout=60.0):
         """The first event for which accept(event) is true (others are kept)."""
@@ -237,10 +282,10 @@ class Smoke:
     def run(self):
         a = self.args
         conn = self.connect()
-        hello = conn.hello()
+        hello = conn.hello(a.token)
         self.report["hello"] = {k: hello.get(k) for k in ("protocol", "app", "app_version", "package", "android", "default_sms_app", "permissions")}
         print("hello: " + json.dumps(self.report["hello"]), flush=True)
-        self.check(hello.get("protocol") == 1, "protocol version 1")
+        self.check(hello.get("protocol") == 2, "protocol version 2, the companion's proof checked, auth done")
         self.check(hello.get("app") == "axross-android-companion", "the app's name")
         self.check("sms.send" in hello.get("capabilities", []), "sms.send is a capability")
         perms = hello.get("permissions", {})
@@ -273,19 +318,38 @@ class Smoke:
             self.expect_error(conn, "message.mark_read", {"thread_id": 1}, "not_default_sms_app")
         self.expect_error(conn, "messages.list", {"thread_id": 0}, "bad_request")
 
-        # a second session: no hello first -> refused and closed
-        other = self.connect()
-        try:
-            other.send("threads.list", {})
-            frames = other.wait_closed()
-            codes = [f.get("error", {}).get("code") for f in frames]
-            self.check("handshake_required" in codes, "a request before hello: handshake_required, closed")
-        finally:
-            other.close()
+        # other sessions: the handshake's refusals, each closed
+        def refused(what, code, start):
+            other = self.connect()
+            try:
+                start(other)
+                frames = other.wait_closed()
+                codes = [f.get("error", {}).get("code") for f in frames]
+                self.check(code in codes, f"{what}: {code}, closed (got {codes})")
+            finally:
+                other.close()
+
+        refused("a request before hello", "handshake_required", lambda c: c.send("threads.list", {}))
+        refused("a version-1 hello", "unsupported_protocol",
+                lambda c: c.send("hello", {"protocols": [1], "client": "axross-companion-smoke"}))
+        refused("hello with a token the service was not given", "unknown_token",
+                lambda c: c.send("hello", {"protocols": [2], "client_nonce": secrets.token_hex(32),
+                                           "token_id": token_id(secrets.token_hex(32))}))
+
+        def wrong_proof(c):
+            c.hello(a.token, auth=False)
+            c.send("auth", {"proof": secrets.token_hex(32)})
+        refused("auth with a wrong proof", "auth_failed", wrong_proof)
+
+        def no_auth(c):
+            c.hello(a.token, auth=False)
+            c.send("threads.list", {})
+        refused("a request between hello and auth", "handshake_required", no_auth)
+
         # a broken frame -> session.closing protocol_error, closed
         other = self.connect()
         try:
-            other.hello()
+            other.hello(a.token)
             other.send_raw(b"\x00\x00\x00\x00")
             frames = other.wait_closed()
             reasons = [f.get("data", {}).get("reason") for f in frames if f.get("event") == "session.closing"]
@@ -299,9 +363,16 @@ class Smoke:
         conn.call("subscribe", {"events": ["message.received", "messages.changed"]})
         token = secrets.token_hex(4)
         text = f"axross companion smoke {token}"
-        sent = conn.call("sms.send", {"recipients": [a.sms_to], "text": text, "delivery_report": True})
+        ref = f"smoke-{token}"
+        params = {"recipients": [a.sms_to], "text": text, "delivery_report": True, "client_ref": ref}
+        sent = conn.call("sms.send", params)
         send_id = sent["send_id"]
         self.check(len(sent["recipients"]) == 1 and sent["recipients"][0]["parts"] == 1, f"sms.send accepted (send_id {send_id})")
+        self.check(sent.get("duplicate") is False and sent.get("client_ref") == ref, "sms.send: duplicate false, client_ref echoed")
+        # the same client_ref again (as after a lost answer): answered, not sent again
+        again = conn.call("sms.send", params)
+        self.check(again.get("duplicate") is True and again.get("send_id") == send_id,
+                   f"the same client_ref again: duplicate true, send_id {again.get('send_id')}")
         try:
             ev = conn.wait_event(lambda e: e["event"] in ("sms.sent", "sms.failed") and e["data"].get("send_id") == send_id, timeout=a.sent_timeout)
             self.report["send_event"] = ev["event"]
@@ -318,6 +389,12 @@ class Smoke:
             self.warn("no sms.delivered within 20 s (the emulator may not send reports)")
         st = conn.call("sms.status", {"send_id": send_id})
         self.check(st["recipients"][0]["state"] in ("sent", "delivered"), f"sms.status says {st['recipients'][0]['state']}")
+        st = conn.call("sms.status", {"client_ref": ref})
+        self.check(st.get("send_id") == send_id and st.get("client_ref") == ref, "sms.status by client_ref")
+        self.expect_error(conn, "sms.status", {"client_ref": f"never-{token}"}, "not_found")
+        self.expect_error(conn, "sms.status", {"send_id": send_id, "client_ref": ref}, "bad_request")
+        again_events = [e for e in conn.events if e["event"] == "sms.sent" and e["data"].get("send_id") == send_id]
+        self.check(not again_events, "no second sms.sent for the duplicate")
 
         # the message to ourselves comes back (the emulator's modem loops it)
         try:
@@ -326,7 +403,7 @@ class Smoke:
         except TimeoutError:
             # (is it in the store? then the companion missed it; if not, it never came back)
             found = conn.call("messages.search", {"query": token})["messages"]
-            boxes = sorted(m.get("box") for m in found if m.get("body") == text)
+            boxes = sorted(m.get("box") for m in found if m.get("body") == text and m.get("box") != "sent")
             self.report["loopback_boxes"] = boxes
             self.warn(f"no message.received within {a.receive_timeout} s for the SMS to ourselves "
                       f"(in the store: {boxes or 'nothing'})")
@@ -361,6 +438,9 @@ class Smoke:
             self.check(True, "the sent SMS is in a thread (messages.list)")
             result = conn.call("messages.search", {"query": token})
             self.check(any(m.get("body") == text for m in result["messages"]), "messages.search finds it")
+            copies = sum(1 for m in result["messages"] if m.get("body") == text and m.get("box") in ("sent", "outbox", "failed", "queued"))
+            self.report["sent_copies"] = copies
+            self.check(copies == 1, f"sent once although asked twice ({copies} in the sent box)")
             one = next(m for m in conn.call("messages.list", {"thread_id": found["id"], "limit": 20})["messages"] if m.get("body") == text)
             got = conn.call("message.get", {"kind": one["kind"], "id": one["id"]})["message"]
             self.check(got["id"] == one["id"], "message.get")
@@ -399,6 +479,7 @@ class Smoke:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=38999, help="the local end of adb forward tcp:<port> localabstract:axross-companion")
+    parser.add_argument("--token", required=True, help="the token the service was started with (--es token, 64 hex characters)")
     sub = parser.add_subparsers(dest="command", required=True)
     c = sub.add_parser("call", help="hello, then one request; prints the answer and any events")
     c.add_argument("method")
@@ -411,15 +492,20 @@ def main():
     s.add_argument("--inject", default=None, help="a command that makes an SMS arrive; {text} is replaced by its text")
     s.add_argument("--connect-timeout", type=int, default=60, help="seconds to wait for the companion to listen")
     args = parser.parse_args()
+    if not is_hex(args.token, 64):
+        parser.error("--token must be 64 lowercase hex characters")
 
     if args.command == "smoke":
         deadline = time.monotonic() + args.connect_timeout
         while True:
             try:
                 probe = Connection(port=args.port, timeout=10)
-                probe.hello()
+                probe.hello(args.token)
                 probe.close()
                 break
+            except NotTheCompanion as e:
+                print(f"FAIL {e}")
+                return 1
             except (OSError, EOFError, ProtocolError, CompanionError) as e:
                 if time.monotonic() > deadline:
                     print(f"FAIL the companion does not answer hello on port {args.port}: {e!r}")
@@ -429,9 +515,16 @@ def main():
 
     conn = Connection(port=args.port)
     try:
-        hello = conn.hello("cli")
+        try:
+            hello = conn.hello(args.token, "cli")
+        except NotTheCompanion as e:
+            print(json.dumps({"error": "not_the_companion", "message": str(e)}, indent=2))
+            return 3
+        except CompanionError as e:
+            print(json.dumps({"error": e.code, "data": e.data}, indent=2))
+            return 2
         if args.method == "hello":
-            print(json.dumps(hello, indent=2, ensure_ascii=False))
+            print(json.dumps({k: v for k, v in hello.items() if k != "auth"}, indent=2, ensure_ascii=False))
             return 0
         try:
             result = conn.call(args.method, json.loads(args.params))
