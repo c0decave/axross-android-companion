@@ -659,7 +659,9 @@ the release's names, so the component is
 Where Android refuses the service's start from the shell, `am start -n
 <package>/io.github.c0decave.axross.companion.ShellStartActivity --es token
 <64 hex>` starts it (since 0.1.2): an activity without a screen, not in the
-launcher, that hands the token to the service and finishes at once. Like
+launcher, that hands the token to the service and finishes at once (start
+it without `-W`: it never draws, and `am start -W` may then wait for ever
+on older Android versions). Like
 the service it is exported only to holders of `android.permission.DUMP` -
 the shell, not apps - so no app can give the service tokens of its own and
 push the client's token out. `MainActivity`, the launcher's screen, which

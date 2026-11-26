@@ -102,7 +102,7 @@ new_token() { python3 -I -c 'import secrets; print(secrets.token_hex(32))'; }
 # The service is given a token on every start (docs/PROTOCOL.md, section 4).
 start_service() { # token
     local started
-    started=$(adb shell am start-foreground-service -n "$PACKAGE/$CLASSES.CompanionService" --es token "$1" 2>&1 | tr -d '\r')
+    started=$(timeout 60 adb shell am start-foreground-service -n "$PACKAGE/$CLASSES.CompanionService" --es token "$1" 2>&1 | tr -d '\r')
     echo "$started" | grep -v -e "$1"
     if echo "$started" | grep -qi "error"; then
         echo "::warning title=smoke test::am start-foreground-service was refused; starting through ShellStartActivity"
@@ -110,8 +110,11 @@ start_service() { # token
     fi
 }
 # The fallback: the activity only the shell may start hands the token on.
+# (no -W: the activity never draws - it finishes in onCreate - and Android
+# 8.0's `am start -W` may wait for ever for one that never draws; every adb
+# call of the new steps has a time limit for that reason)
 shell_start() { # token
-    adb shell am start -W -n "$PACKAGE/$CLASSES.ShellStartActivity" --es token "$1" 2>&1 | tr -d '\r' | grep -v -e "$1"
+    timeout 60 adb shell am start -n "$PACKAGE/$CLASSES.ShellStartActivity" --es token "$1" 2>&1 | tr -d '\r' | grep -v -e "$1"
 }
 wait_listening() { # seconds
     local waited=0
@@ -123,7 +126,17 @@ wait_listening() { # seconds
     done
 }
 ping_with() { # token -> the reference client's output
-    python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$1" call ping 2>&1
+    timeout 60 python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$1" call ping 2>&1
+}
+# ping with a token until it works (the service got it) or 15 s are over
+ping_until() { # token -> the last output
+    local got i
+    for i in $(seq 1 8); do
+        got=$(ping_with "$1")
+        echo "$got" | grep -q '"time"' && break
+        sleep 2
+    done
+    echo "$got"
 }
 TOKEN=$(new_token)
 TOKENS="$TOKEN"
@@ -175,13 +188,13 @@ fi
 
 # The restart: the service stops, its process goes, the service starts again.
 say "restart: stopping the service and its process"
-adb shell am stopservice -n "$PACKAGE/$CLASSES.CompanionService" >/dev/null 2>&1 || true
+timeout 60 adb shell am stopservice -n "$PACKAGE/$CLASSES.CompanionService" >/dev/null 2>&1 || true
 sleep 3
-adb shell am kill "$PACKAGE" >/dev/null 2>&1 || true
+timeout 60 adb shell am kill "$PACKAGE" >/dev/null 2>&1 || true
 sleep 2
 if [ -n "$(app_pid)" ]; then
     # (still there: a stop that leaves no process at all)
-    adb shell am force-stop "$PACKAGE" >/dev/null 2>&1 || true
+    timeout 60 adb shell am force-stop "$PACKAGE" >/dev/null 2>&1 || true
     sleep 2
 fi
 if [ -n "$(app_pid)" ]; then
@@ -203,23 +216,22 @@ if [ "$PID2" = "$PID" ]; then
     say "FAIL the restart kept the process (pid $PID)"
     result=1
 fi
-python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$TOKEN2" smoke-restart --out "$OUT" || result=1
+timeout 300 python3 -I "$HERE/ci/companion_client.py" --port "$PORT" --token "$TOKEN2" smoke-restart --out "$OUT" || result=1
 
 # The fallback start, and the launcher's screen that takes no token.
 TOKEN3=$(new_token)
 TOKEN4=$(new_token)
 TOKENS="$TOKENS $TOKEN3 $TOKEN4"
 shell_start "$TOKEN3" > /dev/null
-sleep 2
-GOT=$(ping_with "$TOKEN3")
+GOT=$(ping_until "$TOKEN3")
 if echo "$GOT" | grep -q '"time"'; then
     say "ok   ShellStartActivity --es token: the token works"
 else
     say "FAIL ShellStartActivity --es token: $(echo "$GOT" | head -c 300)"
     result=1
 fi
-adb shell am start -W -n "$PACKAGE/$CLASSES.MainActivity" --ez listen true --es token "$TOKEN4" 2>&1 | tr -d '\r' | grep -v -e "$TOKEN4"
-sleep 2
+timeout 60 adb shell am start -n "$PACKAGE/$CLASSES.MainActivity" --ez listen true --es token "$TOKEN4" 2>&1 | tr -d '\r' | grep -v -e "$TOKEN4"
+sleep 5
 GOT=$(ping_with "$TOKEN4")
 if echo "$GOT" | grep -q '"unknown_token"'; then
     say "ok   MainActivity takes no token (unknown_token)"
@@ -227,7 +239,7 @@ else
     say "FAIL MainActivity took a token: $(echo "$GOT" | head -c 300)"
     result=1
 fi
-adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+timeout 30 adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
 
 if [ "$(app_pid)" != "$PID2" ]; then
     say "FAIL the app's process died or was started again after the restart"
