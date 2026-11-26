@@ -34,7 +34,7 @@
     <string name="note_default_title">Make your messaging app the default again</string>
     <string name="note_default_after_restore">The restore is done. Tap to choose your own messaging app as the default SMS app again.</string>
     <string name="note_default_sms_arrived">A new SMS arrived and was stored while axross companion is the default SMS app. Tap to make your own messaging app the default again.</string>
-    <string name="note_default_mms_arrived">An MMS arrived while axross companion is the default SMS app; it cannot download MMS. Make your own messaging app the default again to receive it (tap).</string>
+    <string name="note_default_mms_arrived">An MMS arrived while axross companion is the default SMS app. The companion cannot download MMS, so this one may be lost. Tap to make your own messaging app the default again, so that the next ones arrive.</string>
 
     <plurals name="restore_question">
         <item quantity="one">axross wants to restore %1$d message from %2$s to this phone.</item>
@@ -42,7 +42,7 @@
     </plurals>
     <string name="restore_unknown_source">a backup</string>
     <string name="restore_note_default">Messages already on the phone are not touched; ones that are there already are skipped.</string>
-    <string name="restore_note_not_default">Android lets only the default SMS app write messages: after \"Restore\" Android asks you to make axross companion the default SMS app. When the restore is done, make your own messaging app the default again (a notification reminds you). While the companion is the default, new SMS are stored, but MMS cannot be downloaded.</string>
+    <string name="restore_note_not_default">Android lets only the default SMS app write messages: after \"Restore\" Android asks you to make axross companion the default SMS app. When the restore is done, make your own messaging app the default again (a notification reminds you). While the companion is the default, new SMS are stored, but MMS are not received.</string>
     <string name="restore_ok">Restore</string>
     <string name="restore_cancel">Cancel</string>
     <string name="restore_none">There is no restore waiting for an answer (it may have expired or been answered).</string>

@@ -7,14 +7,18 @@ android/app/src/main/java/io/github/c0decave/axross/companion/
   protocol/          plain Java, no Android: the protocol (unit-tested on the JVM)
     Frame            framing: u32 BE length, kind, payload; blob chunks
     Json             a strict JSON reader/writer (no library)
-    Session          one connection: handshake, requests, answers, events,
-                     blobs, the writer thread and its queue, closing
+    Session          one connection: handshake (hello, auth), requests,
+                     answers, events, blobs, the writer thread and its queue,
+                     closing
+    Tokens           the tokens the shell gave (at most 8, in memory),
+                     token_id, the nonces and HMAC proofs of the handshake
     Requests, Params every method's parameters, checked (the one gate)
     Recipients, TextRules   the rules of sms.send
     RateLimiter      sliding windows (minute, hour)
     PeerPolicy       uid 2000 / 0 (the credentials behind an interface)
     MessageOrder     the cursor's order and the provider selections after it
-    SendTracker      parts sent/delivered -> sms.* events; sms.status
+    SendTracker      parts sent/delivered -> sms.* events; sms.status;
+                     client_ref: a send asked for again is not sent again
     Protocol, ErrorCode     constants
   CompanionService   the foreground service: LocalServerSocket, peer check, sessions, notification
   Backend            Session.Handler: what each method does on the phone
@@ -57,6 +61,26 @@ something started it, only uid 2000/0 can connect. Fallback where Android
 refuses the start: `am start -n .../.MainActivity --ez listen true` starts
 it from the visible activity.
 
+**A token from the shell, a proof both ways (protocol 2).** The peer check
+protects the companion from apps, but not axross from an app that listens
+on the abstract name while the service is not running (adbd connects to
+any listener of that name). So each start of the service carries a token
+(`--es token`), which only the shell can give (DUMP); the companion proves
+in `hello` that it holds it (HMAC-SHA256 over both nonces), and the client
+proves the same with `auth`. The tokens stay in memory, at most eight (a
+few axross windows or computers at a time), and are never logged.
+MainActivity passes a token on too, for phones where the shell may not
+start the service; as the launcher's activity any app can reach it, which
+lets an app push tokens out (axross then gives its own again), not learn
+or use one.
+
+**Sends by client_ref.** A send whose answer was lost (the link broke)
+must not be sent twice when axross tries again: `SendTracker` remembers
+each send's `client_ref` for an hour, and `Sender` answers a known one with
+the first result instead of sending. The look-up, the rate limit and the
+registration are one step under the tracker's lock, so two requests with
+one `client_ref` at the same time make one send.
+
 **One writer thread a session, a bounded queue.** A client that stops
 reading stalls no other session and no producer: live events are queued at
 once (up to 96 MiB, then the session is closed as `slow_reader`); answers
@@ -70,8 +94,22 @@ only, so the APK holds this repository's code and nothing else.
 
 **Default SMS app components.** Delete, mark read and restore need the role,
 so the app declares what Android requires of a role holder. It stores
-incoming SMS while it holds the role (nothing gets lost) but cannot download
-MMS (version 1), and it reminds the user to give the role back.
+incoming SMS while it holds the role, but an MMS that arrives meanwhile is
+not received: the carrier's notification (WAP push) reaches only the
+default app, and the companion only logs it and reminds the user to give
+the role back.
+
+Storing that notification (an M-Notification.ind) in the MMS provider, as
+AOSP Messaging does with auto-retrieve off, so that the user's own app
+could download it later, was looked at for 0.1.1 and left out. Android has
+no public API for it: the companion would parse the carrier's binary PDU
+itself (WSP-encoded headers, untrusted input), and write rows (`pdu` with
+`m_type` 130, `addr`, the thread) whose meaning each messaging app reads its
+own way - Google Messages keeps its own database and is not known to offer
+a download for such a row. None of it can be tested in the emulator, and a
+wrong row in the user's message store is worse than the reminder. The
+time as the default SMS app stays short instead (restore, delete, mark
+read), and the screens say that MMS are not received meanwhile.
 
 ### Versions
 
