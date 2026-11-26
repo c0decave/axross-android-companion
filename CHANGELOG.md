@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.1.2 (2026-11-26)
+
+Protocol 2, revision 1: additions that a client of revision 0 (axross
+0.15.185/0.15.186 as released) can ignore; `protocol` stays 2. From the
+release review of axross 0.15.186's Messages (N-H2, N-H3, N-M1, N-L3,
+N-L4, N-L5).
+
+- **The send store.** Every accepted send is written to the app's private
+  files before any part of it is handed to Android (atomically: a
+  temporary file, fsync, rename; Android's reports go to a journal, one
+  fsync'd line each): client_ref, send_id, the normalized recipients with
+  their parts, the time, each recipient's state - never the text. Kept for
+  a day (`keep_ms` 86400000, an hour of grace), at most 5000 sends, never
+  in a backup. A send that cannot be written answers `internal` and is not
+  sent. So `sms.status` answers, and a `client_ref` asked for again is a
+  duplicate, across restarts of the service, process deaths and reboots;
+  the rate limit holds across runs too.
+- `hello` says `"revision": 1` and `"sends": {"store", "keep_ms"}`: the
+  store's random 128-bit id, new only when the store is new, lost or
+  unreadable. New capabilities `sms.refs` and `backup.ack`.
+- `sms.status` answers from the store, also for earlier runs' sends, with
+  `store` and `accepted`; the new state `unknown` (a recipient still
+  `sending` an hour after acceptance, from then on); and, while an
+  `sms.send` with that `client_ref` is still being checked,
+  `{"client_ref", "send_id": null, "recipients": [], "pending": true,
+  "store"}`. A `client_ref` is registered as soon as its request is read,
+  before the permission, SIM, parts and rate checks, and dropped when the
+  send is refused: `not_found` by `client_ref` now means "never accepted,
+  not sent" while `sends.store` is the same and the send is younger than
+  `keep_ms`.
+- A second `sms.send` with a `client_ref` that is still being checked waits
+  for the first and gets its result (`"duplicate": true`) or the same
+  error.
+- `sms.sent`, `sms.failed` and `sms.delivered` carry `client_ref`. Android's
+  reports reach the store through the manifest's receiver also while the
+  service does not run.
+- Send ids count on from a random start (1..2^31) per store and do not
+  repeat across runs; PendingIntents have a data URI and request code of
+  their own per store, send, recipient, part and kind, so a new run never
+  gets an old FLAG_ONE_SHOT intent back.
+- `backup.export` takes `window` (1..64): at most that many `backup.items`
+  unacknowledged; the new method `backup.ack {export_id, seq}` acknowledges
+  them. The session goes on reading and answering while the export waits.
+- Tokens from the shell only: `MainActivity` (the launcher's, so any app's)
+  takes no token and no `--ez listen` any more. The fallback start is the
+  new `ShellStartActivity`, exported only to holders of DUMP, without a
+  screen: `am start -n <package>/io.github.c0decave.axross.companion.ShellStartActivity --es token <64 hex>`.
+- Fixtures: new sessions `hello_revision`, `send_events_ref`,
+  `status_earlier_run`, `status_pending`, `status_not_found`,
+  `send_duplicate_across_runs`, `backup_window`, `backup_ack_errors`; every
+  hello of revision 1; `send` and `send_duplicate` with large send ids and
+  `client_ref` in their events; `sms.status` answered from the store (a
+  session's `phone.sends`, an answer's `wait_for`: protocol/README.md). The
+  reference client and the smoke test check the revision, the events'
+  `client_ref`, an export paced by acks, a restart of the service in a new
+  process, the fallback start and that `MainActivity` takes no token.
+
 ## 0.1.1 (2026-11-26)
 
 Protocol version 2 (docs/PROTOCOL.md). axross must speak it too: a client

@@ -7,7 +7,7 @@ do over ADB: **read** SMS, MMS and contacts reliably, **send** SMS, and
 report new messages as they arrive. axross's Messages window talks to it
 through `adb forward` - nothing else can.
 
-**Status: 0.1.0, a pre-release.** CI builds it, tests it on the JVM and
+**Status: 0.1.2, a pre-release** (protocol 2, revision 1). CI builds it, tests it on the JVM and
 runs it in emulators (Android 14 and 8.0); it has not yet run on a real
 phone (see [What is verified](#what-is-verified)).
 
