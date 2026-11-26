@@ -101,11 +101,16 @@ reads where logs and artifacts are out of reach.
   (`scripts/check_pins.py`).
 - **Gradle build**: exact plugin and dependency versions, the known
   repositories only, no library in the app (also `check_pins.py`).
-- **Gradle's dependencies** (AGP and its tree, JUnit): *not verified by
-  checksum yet*. The build job generates
-  `android/gradle/verification-metadata.xml` on each run until one is
-  committed and offers it as the artifact `gradle-verification-metadata`:
-  review it, commit it, and Gradle enforces it from then on.
+- **Gradle's dependencies** (AGP and its tree, aapt2, lint, JUnit): verified
+  by SHA-256, `android/gradle/verification-metadata.xml` (Gradle refuses
+  any artifact not in it, or with another checksum). It was written by CI
+  run 45801479769 for the tests, the debug and release APK and lint (287
+  components, 496 files) and reviewed: only Google's Maven and Maven Central
+  artifacts of the AGP 8.13.2 tree; 22 of them, sampled, downloaded again
+  and their SHA-256 compared - all equal. To change a version: delete the
+  file, push, take the new one from the build job's annotations
+  (`verification-metadata i/n`, xz + base64; scripts/ci/build.sh), review,
+  commit.
 - **Tools in CI**: the JDK (setup-java, Temurin), Gradle (Gradle's action),
   the SDK and emulator images (the runner's image, the emulator runner) -
   trusted as distributed, as in axross-amp-android.

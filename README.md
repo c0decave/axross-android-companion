@@ -165,9 +165,8 @@ attests the provenance and makes a **draft** release with the APK and
    the app's log. Android 14 must pass; Android 8.0 is run and reported.
 
 Gradle's own dependencies (the Android Gradle Plugin's tree from Google's
-Maven repository, JUnit from Maven Central) are not verified by checksum
-yet: the build job offers `android/gradle/verification-metadata.xml` as an
-artifact until it is reviewed and committed (docs/ARCHITECTURE.md, "Supply
+Maven repository, JUnit from Maven Central) are verified by SHA-256
+(`android/gradle/verification-metadata.xml`, docs/ARCHITECTURE.md, "Supply
 chain"). The APK itself contains only this repository's classes.
 
 ## What is verified
