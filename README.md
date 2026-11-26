@@ -182,23 +182,28 @@ chain"). The APK itself contains only this repository's classes.
 ## What is verified
 
 In CI (first green run 45792356217; with Gradle's checksums enforced
-45803878703), on every push:
+45803878703; protocol 2: 45867913452), on every push:
 
-- the JVM unit tests (42, including every shared fixture), the debug APK,
-  lint (one finding: OldTargetApi - targetSdk 36 is the highest the Android
-  Gradle Plugin 8.13 supports), the APK's permissions (no network) and its
-  merged manifest's rules, Gradle's dependencies by SHA-256;
+- the JVM unit tests (57, including every shared fixture, the proofs
+  computed from the fixtures' token), the debug APK, lint (one finding:
+  OldTargetApi - targetSdk 36 is the highest the Android Gradle Plugin 8.13
+  supports), the APK's permissions (no network) and its merged manifest's
+  rules, Gradle's dependencies by SHA-256;
 - in emulators, Android 14 (required) and Android 8.0: install, `pm grant`
-  of every permission, `am start-foreground-service` from the shell, the
-  connection through `adb forward` from uid 2000, hello, status, SIMs,
-  contacts, threads, the refusals (too many recipients, bad numbers, empty
-  text, `mms.send`, delete and mark read without the SMS role), a request
-  before hello and a broken frame on other sessions, an SMS to the
-  emulator's own number with its `sms.sent` and `sms.status`, an incoming
-  SMS (from the emulator's console) as `message.received`, the sent SMS in
-  a thread, `messages.search`, `message.get`, a streamed `backup.export`;
-  afterwards the process alive, no crash, and neither the number nor the
-  text in the app's log.
+  of every permission, `am start-foreground-service --es token` from the
+  shell, the connection through `adb forward` from uid 2000, the handshake
+  (the companion's proof checked, auth), status, SIMs, contacts, threads,
+  the refusals (too many recipients, bad numbers, empty text, `mms.send`,
+  delete and mark read without the SMS role), on other sessions a request
+  before hello, a version-1 hello, an unknown token, a wrong proof, a
+  request before auth and a broken frame, an SMS to the emulator's own
+  number asked for twice with one `client_ref` (one copy in the sent box,
+  the second answer `duplicate: true`) with its `sms.sent` and `sms.status`
+  by `send_id` and by `client_ref`, an incoming SMS (from the emulator's
+  console) as `message.received`, the sent SMS in a thread,
+  `messages.search`, `message.get`, a streamed `backup.export`, eight more
+  tokens pushing the first out; afterwards the process alive, no crash, and
+  neither the number, the text nor a token in the app's log.
 
 Seen in the emulators and not failures: no delivery report (Android 8.0's
 emulator sends none within 20 s), and Android 14's emulator does not loop an
