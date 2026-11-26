@@ -106,7 +106,7 @@ final class Backend implements Session.Handler {
                 "limits", Protocol.limits(),
                 "default_sms_app", Perms.isDefaultSmsApp(service),
                 "permissions", Perms.state(service),
-                "sends", Protocol.sends(Sends.get(service).store.id()));
+                "sends", Protocol.sends(Sends.get(service).store));
     }
 
     /** sms.send's client_ref is "checking" from the moment the request is read. */
@@ -138,7 +138,8 @@ final class Backend implements Session.Handler {
                         "default_sms_package", Perms.defaultSmsPackage(service),
                         "permissions", Perms.state(service),
                         "subscribed", session.subscriptions(),
-                        "sessions", (long) service.sessions().size()));
+                        "sessions", (long) service.sessions().size(),
+                        "sends", Protocol.sends(Sends.get(service).store)));
                 return;
             case "subscriptions.list":
                 call.ok(subscriptions());
@@ -191,7 +192,8 @@ final class Backend implements Session.Handler {
             case "sms.status": {
                 Requests.SendQuery q = (Requests.SendQuery) v;
                 SendTracker tracker = Sends.get(service).tracker;
-                Map<String, Object> st = q.clientRef != null ? tracker.status(q.clientRef) : tracker.status(q.sendId);
+                // (by client_ref, not_found carries the store and dropped_through)
+                Map<String, Object> st = q.clientRef != null ? tracker.statusByRef(q.clientRef) : tracker.status(q.sendId);
                 if (st == null) {
                     throw new RequestException(ErrorCode.NOT_FOUND, "no such send (never accepted, or older than keep_ms)");
                 }

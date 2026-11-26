@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://github.com/c0decave/axross-android-companion/blob/main/protocol/schema/protocol-v2.schema.json",
- "title": "axross companion protocol, version 2 (revision 1)",
- "description": "The JSON frames of docs/PROTOCOL.md. The root validates any JSON frame (a request, a response or an event); x-methods maps each method to its params and result, x-events each event to its data, x-error-codes lists the error codes. Unknown fields are allowed everywhere (they are ignored). Revision 1 (companion 0.1.2) adds fields, a method and a state that a client of revision 0 ignores: hello's revision and sends, sms.status's store, accepted and pending, client_ref in the sms.* events, backup.export's window and backup.ack.",
+ "title": "axross companion protocol, version 2 (revision 2)",
+ "description": "The JSON frames of docs/PROTOCOL.md. The root validates any JSON frame (a request, a response or an event); x-methods maps each method to its params and result, x-events each event to its data, x-error-codes lists the error codes, x-error-data the data of an error where a method defines it. Unknown fields are allowed everywhere (they are ignored). Revision 1 (companion 0.1.2) adds fields, a method and a state that a client of revision 0 ignores: hello's revision and sends, sms.status's store, accepted and pending, client_ref in the sms.* events, backup.export's window and backup.ack. Revision 2 (companion 0.1.3) adds next_id and dropped_through to hello's sends, sends to status's result, not_found's data for sms.status by client_ref (x-error-data) and the capability sms.dropped: \"not_found\" by client_ref means \"never accepted\" exactly when the store is unchanged and dropped_through is below the next_id of the hello of the session the send went over.",
  "oneOf": [
   {
    "$ref": "#/$defs/Request"
@@ -15,7 +15,7 @@
   }
  ],
  "x-protocol-version": 2,
- "x-protocol-revision": 1,
+ "x-protocol-revision": 2,
  "x-socket": "localabstract:axross-companion",
  "x-methods": {
   "hello": {
@@ -271,6 +271,13 @@
   "cancelled",
   "internal"
  ],
+ "x-error-data": {
+  "sms.status": {
+   "not_found": {
+    "$ref": "#/$defs/SendNotFound"
+   }
+  }
+ },
  "$defs": {
   "Request": {
    "type": "object",
@@ -1100,7 +1107,7 @@
      "const": 2
     },
     "revision": {
-     "description": "Additions within the protocol version: 1 for companion 0.1.2; absent (0) before.",
+     "description": "Additions within the protocol version: 1 for companion 0.1.2, 2 for 0.1.3; absent (0) before.",
      "type": "integer",
      "minimum": 0
     },
@@ -1168,21 +1175,7 @@
      ]
     },
     "sends": {
-     "description": "The send store (revision 1): its id and how long a send is kept after acceptance.",
-     "type": "object",
-     "properties": {
-      "store": {
-       "$ref": "#/$defs/StoreId"
-      },
-      "keep_ms": {
-       "type": "integer",
-       "minimum": 1
-      }
-     },
-     "required": [
-      "store",
-      "keep_ms"
-     ]
+     "$ref": "#/$defs/Sends"
     }
    },
    "required": [
@@ -1262,6 +1255,9 @@
     "sessions": {
      "type": "integer",
      "minimum": 0
+    },
+    "sends": {
+     "$ref": "#/$defs/Sends"
     }
    },
    "required": [
@@ -2366,6 +2362,53 @@
    "pattern": "^[0-9a-f]{32}$",
    "minLength": 32,
    "maxLength": 32
+  },
+  "Sends": {
+   "description": "The send store (hello and status): its id and how long a send is kept after acceptance (revision 1); the id the next accepted send gets and the highest send id the store ever dropped, 0 for none (revision 2).",
+   "type": "object",
+   "properties": {
+    "store": {
+     "$ref": "#/$defs/StoreId"
+    },
+    "keep_ms": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "next_id": {
+     "description": "The send id the next accepted send will get (revision 2). Every send accepted after this answer, in this session or another, has an id at least this. 2^53 when every id was given out.",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740992
+    },
+    "dropped_through": {
+     "description": "The highest send id the store has ever dropped, for any reason (age, the size cap), or 0 (revision 2). Never decreases while the store id stays; below next_id.",
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991
+    }
+   },
+   "required": [
+    "store",
+    "keep_ms"
+   ]
+  },
+  "SendNotFound": {
+   "description": "The data of sms.status's not_found by client_ref (revision 2): the store and its dropped_through at the time of the answer. With the same store, dropped_through below the next_id of the hello of the session the send went over means it was never accepted.",
+   "type": "object",
+   "properties": {
+    "store": {
+     "$ref": "#/$defs/StoreId"
+    },
+    "dropped_through": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991
+    }
+   },
+   "required": [
+    "store",
+    "dropped_through"
+   ]
   },
   "SendStatus": {
    "description": "A send the store has.",

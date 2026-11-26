@@ -355,6 +355,21 @@ public final class SendTracker {
         return null;
     }
 
+    /**
+     * sms.status by client_ref as answered: {@link #status(String)}, or
+     * not_found with {@code data} {store, dropped_through} (revision 2).
+     * dropped_through is read after the store was asked; it only grows, so
+     * it counts every send that was gone by then.
+     */
+    public synchronized Map<String, Object> statusByRef(String clientRef) throws RequestException {
+        Map<String, Object> st = status(clientRef);
+        if (st != null) {
+            return st;
+        }
+        throw new RequestException(ErrorCode.NOT_FOUND,
+                "no send with this client_ref (never accepted, or dropped: see dropped_through)", store.notFound());
+    }
+
     private Map<String, Object> status(SendStore.Send s) {
         List<Object> list = new ArrayList<>();
         for (int i = 0; i < s.size(); i++) {

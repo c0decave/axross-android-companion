@@ -198,10 +198,13 @@ chain"). The APK itself contains only this repository's classes.
 In CI (first green run 45792356217; with Gradle's checksums enforced
 45803878703; protocol 2: 45867913452), on every push:
 
-- the JVM unit tests (81, including every shared fixture - the sends
+- the JVM unit tests (92, including every shared fixture - the sends
   through the real send store and tracker, the exports through the real
   window - the proofs computed from the fixtures' token, the send store
-  across simulated restarts, crashes and corrupt files, an export waiting
+  across simulated restarts, crashes and corrupt files, its
+  `dropped_through` across restarts, out-of-order and capped drops, a
+  forward jump of the phone's clock and a failed write, `next_id` read
+  under the allocation lock by concurrent sends, an export waiting
   for acks while a ping is answered), the debug APK, lint (one finding:
   OldTargetApi - targetSdk 36 is the highest the Android Gradle Plugin 8.13
   supports), the APK's permissions (no network) and its merged manifest's

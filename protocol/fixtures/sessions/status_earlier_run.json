@@ -1,13 +1,13 @@
 {
   "name": "status of an earlier run",
-  "description": "sms.status answers from the send store, also for sends that an earlier run of the service accepted (before a restart, a process death, a reboot): a send of ten minutes ago, delivered; one of two hours ago whose first recipient Android never reported on - it was still sending an hour after acceptance, so it is unknown - and whose second was sent; one of 23 hours ago without a client_ref, by send_id; one of 26 hours ago is gone (older than keep_ms): not_found. A new send's id goes on from the stored counter.",
+  "description": "sms.status answers from the send store, also for sends that an earlier run of the service accepted (before a restart, a process death, a reboot): a send of ten minutes ago, delivered; one of two hours ago whose first recipient Android never reported on - it was still sending an hour after acceptance, so it is unknown - and whose second was sent; one of 23 hours ago without a client_ref, by send_id; one of 26 hours ago is gone (older than keep_ms plus the grace, dropped when the store opened, so hello's dropped_through is its id): not_found, with data {store, dropped_through} (revision 2) - the session that sent it had a next_id of at most that id, so for its client \"unknown\", not \"never accepted\". A new send's id goes on from the stored counter.",
   "phone": {
     "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
-      "revision": 1,
+      "revision": 2,
       "app": "axross-android-companion",
-      "app_version": "0.1.2",
-      "app_version_code": 102,
+      "app_version": "0.1.3",
+      "app_version_code": 103,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -32,7 +32,8 @@
         "backup.export",
         "backup.restore",
         "sms.refs",
-        "backup.ack"
+        "backup.ack",
+        "sms.dropped"
       ],
       "limits": {
         "max_frame": 16777216,
@@ -59,7 +60,9 @@
       },
       "sends": {
         "store": "6feebacd6df89e21d7171200838883d5",
-        "keep_ms": 86400000
+        "keep_ms": 86400000,
+        "next_id": 1844674417,
+        "dropped_through": 1844674410
       }
     },
     "sends": {
@@ -166,10 +169,10 @@
         "ok": true,
         "result": {
           "protocol": 2,
-          "revision": 1,
+          "revision": 2,
           "app": "axross-android-companion",
-          "app_version": "0.1.2",
-          "app_version_code": 102,
+          "app_version": "0.1.3",
+          "app_version_code": 103,
           "package": "io.github.c0decave.axross.companion",
           "android": {
             "sdk_int": 34,
@@ -194,7 +197,8 @@
             "backup.export",
             "backup.restore",
             "sms.refs",
-            "backup.ack"
+            "backup.ack",
+            "sms.dropped"
           ],
           "limits": {
             "max_frame": 16777216,
@@ -221,7 +225,9 @@
           },
           "sends": {
             "store": "6feebacd6df89e21d7171200838883d5",
-            "keep_ms": 86400000
+            "keep_ms": 86400000,
+            "next_id": 1844674417,
+            "dropped_through": 1844674410
           },
           "auth": {
             "companion_nonce": "*",
@@ -353,7 +359,11 @@
         "ok": false,
         "error": {
           "code": "not_found",
-          "message": "*"
+          "message": "*",
+          "data": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "dropped_through": 1844674410
+          }
         }
       }
     },

@@ -23,7 +23,7 @@ things: the service is given a token by the shell and both sides prove in
 the handshake that they hold it (sections 4 and 9); `sms.send` takes a
 `client_ref`, and a send asked for again with the same `client_ref` is not
 sent again (section 7); `sms.status` can look a send up by its
-`client_ref`. A companion speaks one version only: 0.1.1 and 0.1.2 speak 2.
+`client_ref`. A companion speaks one version only: 0.1.1 to 0.1.3 speak 2.
 
 Revision 1 of version 2 (companion 0.1.2) adds what a client of revision 0
 can ignore (section 10): the companion keeps its sends on disk, so that
@@ -32,6 +32,13 @@ restarts of the service, process deaths and reboots; `hello` names that
 store; `sms.status` says `pending` while a send is still checked; the
 `sms.*` events name the `client_ref`; and `backup.export` can be paced by
 the client (`window`, `backup.ack`).
+
+Revision 2 (companion 0.1.3) adds what a client of revision 1 can ignore:
+`hello` and `status` say which send id the next accepted send gets
+(`next_id`) and the highest send id the store ever dropped
+(`dropped_through`), and `sms.status`'s `not_found` by `client_ref` says
+the latter too. With them a client can tell "never accepted" from "dropped"
+without trusting any clock (section 7, `sms.status`).
 
 ## 1. Transport
 
@@ -164,17 +171,17 @@ connection, or the companion closes it (`handshake_timeout`).
 ```json
 {"id": 1, "ok": true, "result": {
   "protocol": 2,
-  "revision": 1,
+  "revision": 2,
   "app": "axross-android-companion",
-  "app_version": "0.1.2",
-  "app_version_code": 102,
+  "app_version": "0.1.3",
+  "app_version_code": 103,
   "package": "io.github.c0decave.axross.companion",
   "android": {"sdk_int": 34, "release": "14", "manufacturer": "Google", "model": "sdk_gphone64_x86_64"},
-  "capabilities": ["contacts", "contacts.photo", "threads", "messages", "messages.search", "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts", "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore", "sms.refs", "backup.ack"],
+  "capabilities": ["contacts", "contacts.photo", "threads", "messages", "messages.search", "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts", "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore", "sms.refs", "backup.ack", "sms.dropped"],
   "limits": {"max_frame": 16777216, "max_request_json": 4194304, "max_blob_in": 8388608, "max_blobs_pending": 33554432, "max_blob_out": 67108864, "max_in_flight": 8, "max_recipients": 10, "max_text_chars": 5000, "max_parts": 30, "sends_per_minute": 20, "sends_per_hour": 100, "max_page": 500},
   "default_sms_app": false,
   "permissions": {"READ_SMS": true, "SEND_SMS": true, "RECEIVE_SMS": true, "READ_CONTACTS": true, "READ_PHONE_STATE": true, "POST_NOTIFICATIONS": true},
-  "sends": {"store": "6feebacd6df89e21d7171200838883d5", "keep_ms": 86400000},
+  "sends": {"store": "6feebacd6df89e21d7171200838883d5", "keep_ms": 86400000, "next_id": 1530497217, "dropped_through": 1530496950},
   "auth": {"companion_nonce": "<64 hex>", "proof": "<64 hex>"}
 }}
 ```
@@ -229,8 +236,9 @@ connection, or the companion closes it (`handshake_timeout`).
   Android 13 is reported as `true` (no such permission there).
 - `revision` (since 0.1.2; absent means 0): the additions within version 2
   this companion has (section 10). The capabilities `sms.refs` (the send
-  store below, `pending`, `client_ref` in the events) and `backup.ack` say
-  the same per feature.
+  store below, `pending`, `client_ref` in the events), `backup.ack` and
+  `sms.dropped` (revision 2: `next_id`, `dropped_through`) say the same per
+  feature.
 - `sends` (revision 1): the companion's **send store** (section 7,
   `sms.send`). `store` is its id, 128 random bits as 32 lowercase hex
   characters, made together with the store; `keep_ms` (86400000, a day) is
@@ -240,6 +248,18 @@ connection, or the companion closes it (`handshake_timeout`).
   runs of the service, process deaths and reboots. A client that sees
   another `store` than before must treat what it knew of earlier sends as
   unknown.
+- `sends.next_id` (revision 2): the send id the **next** accepted send
+  will get. The companion reads it under the same lock it gives send ids
+  out under, and ids only grow, so every send accepted after this `hello`
+  - in this session or any other - has an id of at least `next_id`. A
+  client records it per session (section 7, `sms.status`).
+- `sends.dropped_through` (revision 2): the highest send id the store has
+  ever dropped, for any reason (older than `keep_ms` and the grace by the
+  phone's clock, the 5000-send cap, ...), or `0` if it never dropped one.
+  It is the running maximum (ids need not be dropped in order), kept on
+  disk with the store, written before or together with the removal of the
+  send it counts, and it never decreases; it goes back to `0` only together
+  with a new `store` id. It is always below `next_id`.
 
 ## 5. Errors
 
@@ -254,7 +274,7 @@ connection, or the companion closes it (`handshake_timeout`).
 | `not_implemented` | known, not in this version (`mms.send`; MMS in a restore) | |
 | `permission_denied` | the runtime permission it needs is not granted | `permission` |
 | `not_default_sms_app` | Android lets only the default SMS app write messages (delete, mark read, restore) | `default_sms_package` (may be null) |
-| `not_found` | no such message, thread, contact, part, send (by `send_id` or `client_ref`; for `client_ref` see `sms.status`), export, restore | |
+| `not_found` | no such message, thread, contact, part, send (by `send_id` or `client_ref`; for `client_ref` see `sms.status`), export, restore | for `sms.status` by `client_ref` (revision 2): `store`, `dropped_through` |
 | `too_many_recipients` | more than `limits.max_recipients` | `max` |
 | `too_large` | a text over `max_text_chars` or more than `max_parts` parts, a frame over `max_request_json`, a part over `max_blob_out` | `max` |
 | `rate_limited` | sending would exceed the send limits | `retry_after_ms` |
@@ -346,7 +366,9 @@ runtime permission; without it the answer is `permission_denied`.
 - `hello` and `auth`: section 4.
 - `ping` `{}` → `{"time": <ms>}`.
 - `status` `{}` → `{"default_sms_app": bool, "default_sms_package": str|null,
-  "permissions": {...as in hello}, "subscribed": [event names], "sessions": n}`.
+  "permissions": {...as in hello}, "subscribed": [event names], "sessions": n,
+  "sends": {"store", "keep_ms", "next_id", "dropped_through"}}`. `sends`
+  (revision 2) is the send store as `hello` says it (section 4), read now.
 
 ### `subscriptions.list` (needs READ_PHONE_STATE)
 
@@ -429,8 +451,11 @@ first; the companion does not ask again.
   nothing is sent. The store is never in a backup and never moved to
   another device. A send is kept for `keep_ms` (a day) after acceptance and
   dropped at the latest an hour after that (the grace guards against a
-  phone clock that is set forward); at most 5000 sends are kept, the oldest
-  dropped first (the rate limit allows 2400 a day).
+  phone clock that is set forward a little), by the phone's clock; at most
+  5000 sends are kept, the oldest dropped first (the rate limit allows 2400
+  a day). Every send dropped, for whatever reason, is counted in
+  `dropped_through` (revision 2; section 4) in the same atomic write that
+  removes it; until that write has worked the send stays (and is found).
 - **A send asked for again.** A `sms.send` whose `client_ref` is in the
   send store (accepted within `keep_ms`, from any session, in any run of
   the service) is **not sent again**: the answer is the stored send's
@@ -459,9 +484,12 @@ first; the companion does not ask again.
 
 Result: `{"send_id": 3, "recipients": [{"index": 0, "address": "+15555215554", "parts": 1}], "client_ref": "6f1c...", "duplicate": false}`
 (the addresses as normalized; `client_ref` only when the request had one).
-`send_id`s do not repeat for at least `keep_ms` across runs of the service:
-the store keeps a counter, started at a random value in 1..2^31 when the
-store was made; ids stay below 2^53. Then, **to this session only** (for a
+`send_id`s do not repeat across runs of the service: the store keeps a
+counter, started at a random value in 1..2^31 when the store was made and
+written with every accepted send; ids only grow (each accepted send gets
+the counter's value, `hello`'s `sends.next_id`, and the counter goes up by
+one) and stay below 2^53 - they never wrap (past the last one, `sms.send`
+answers `internal`). Then, **to this session only** (for a
 duplicate: none; a session that has gone gets none - the reports still go
 into the store), per recipient:
 
@@ -519,13 +547,44 @@ service does not run (a receiver in the app's manifest takes them).
   and the client asks again a little later (or waits for the `sms.send`'s
   answer).
 - **`not_found`**: by `send_id`, no such send in the store. By
-  `client_ref`, the companion never *accepted* a send with it: it was
-  refused, or it never arrived. That means "not sent" - provided that
-  `hello`'s `sends.store` is the same as when the client sent it, and the
-  send is younger than `keep_ms`. A client that cannot be sure of both
-  (another store id, an older send, or a companion of revision 0, which
-  forgot its sends when its service stopped) must say "unknown" rather than
-  "not sent".
+  `client_ref`, the store has no send with it: it was never accepted
+  (refused, or it never arrived), **or** it was accepted and has been
+  dropped since. Revision 2 tells them apart without a clock: the error's
+  `data` is
+
+  ```json
+  {"code": "not_found", "message": "...", "data": {"store": "6feebacd6df89e21d7171200838883d5", "dropped_through": 1530496950}}
+  ```
+
+  `store` and `dropped_through` as in `hello` (section 4), read after the
+  look-up (as `dropped_through` only grows, it counts every send that was
+  gone by then).
+
+  **The client's rule** (revision 2). For each session the client records
+  `F` = that session's `hello` `sends.next_id`. Every send accepted from
+  that session has an id ≥ `F` (the companion reads `next_id` under the
+  lock it allocates ids under, and ids only grow), so such a send is
+  either still in the store (and found) or counted in `dropped_through`.
+  Hence a `not_found` for a `client_ref` sent over a session with `F`
+  means **"never accepted", "not sent"** exactly when
+
+  - `data.store` is the `sends.store` of that session's `hello`, and
+  - `data.dropped_through < F`.
+
+  Otherwise (`dropped_through ≥ F`: something of that session's sends or
+  after them may have been dropped; another `store`: the store was lost)
+  the client must say "unknown" ("may have been sent") rather than "not
+  sent", and must not send it again without asking. No clock is involved:
+  a phone clock set forward by days makes the store drop sends early, and
+  `dropped_through` shows it.
+
+  `pending` (above) is still answered while that `client_ref` is checked:
+  it is not `not_found`.
+
+  With a companion of revision 1 (no `data`): "not sent" only while the
+  store is the same and the send is younger than `keep_ms` - which depends
+  on the phone's clock, so a careful client says "unknown" there too. With
+  revision 0 (which forgot its sends when its service stopped): "unknown".
 
 ### `mms.parts` (needs READ_SMS)
 
@@ -588,7 +647,7 @@ export does not wait for acks (as in revision 0).
 
 **The backup file** (what axross writes; the companion only streams): JSON
 Lines, UTF-8. Line 1:
-`{"format": "axross-sms-backup", "version": 1, "created": <ms>, "device": {...hello's android...}, "app_version": "0.1.2"}`;
+`{"format": "axross-sms-backup", "version": 1, "created": <ms>, "device": {...hello's android...}, "app_version": "0.1.3"}`;
 then one Message object per line, exactly as `backup.items` carries them,
 MMS part data base64 in `"data": {"base64": "...", "mime": "..."}` instead
 of a blob reference. Files with mode 0600.
@@ -712,3 +771,23 @@ A client of revision 0 sees only fields and capabilities it ignores; the
 one change it may notice is that sends are remembered for a day and across
 restarts, so a `client_ref` it sends again after an hour is still a
 duplicate.
+
+**Revision 2 (companion 0.1.3)**, within version 2:
+
+- `hello`: `"revision": 2`; `sends` gains `next_id` (the id the next
+  accepted send gets) and `dropped_through` (the highest send id the store
+  ever dropped, for any reason, or 0), so it is `{"store", "keep_ms",
+  "next_id", "dropped_through"}`; the capability `sms.dropped` (section 4);
+- the send store keeps `dropped_through` on disk, written before or with
+  each removal, never lowered, reset only with a new store id; send ids
+  only grow and never wrap (section 7, `sms.send`);
+- `status`: `sends`, the same object as `hello`'s, read at the time of the
+  answer (section 7);
+- `sms.status` by `client_ref`: `not_found` carries `data` `{"store",
+  "dropped_through"}`; it means "never accepted" exactly when the store is
+  unchanged and `dropped_through` is below the `next_id` of the `hello` of
+  the session the send went over - no clock involved (section 7,
+  `sms.status`). `pending` is unchanged.
+
+Everything else is as in revision 1. A client of revision 1 sees only
+fields and a capability it ignores.

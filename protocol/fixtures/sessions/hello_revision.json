@@ -1,13 +1,13 @@
 {
-  "name": "hello, revision 1",
-  "description": "hello's result in protocol 2, revision 1 (companion 0.1.2): \"revision\": 1, \"sends\" with the send store's id (32 lowercase hex; a new one only when the store is new or was lost) and keep_ms, and the capabilities sms.refs and backup.ack. A client of revision 0 ignores them.",
+  "name": "hello, revision 2",
+  "description": "hello's result in protocol 2, revision 2 (companion 0.1.3): \"revision\": 2; \"sends\" with the send store's id (32 lowercase hex; a new one only when the store is new or was lost), keep_ms (revision 1), next_id - the id the next accepted send gets - and dropped_through - the highest send id the store ever dropped, 0 here (revision 2); the capabilities sms.refs, backup.ack (revision 1) and sms.dropped (revision 2). A client of an older revision ignores what it does not know.",
   "phone": {
     "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
-      "revision": 1,
+      "revision": 2,
       "app": "axross-android-companion",
-      "app_version": "0.1.2",
-      "app_version_code": 102,
+      "app_version": "0.1.3",
+      "app_version_code": 103,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -32,7 +32,8 @@
         "backup.export",
         "backup.restore",
         "sms.refs",
-        "backup.ack"
+        "backup.ack",
+        "sms.dropped"
       ],
       "limits": {
         "max_frame": 16777216,
@@ -59,7 +60,9 @@
       },
       "sends": {
         "store": "6feebacd6df89e21d7171200838883d5",
-        "keep_ms": 86400000
+        "keep_ms": 86400000,
+        "next_id": 1,
+        "dropped_through": 0
       }
     },
     "answers": {}
@@ -86,10 +89,10 @@
         "ok": true,
         "result": {
           "protocol": 2,
-          "revision": 1,
+          "revision": 2,
           "app": "axross-android-companion",
-          "app_version": "0.1.2",
-          "app_version_code": 102,
+          "app_version": "0.1.3",
+          "app_version_code": 103,
           "package": "io.github.c0decave.axross.companion",
           "android": {
             "sdk_int": 34,
@@ -114,7 +117,8 @@
             "backup.export",
             "backup.restore",
             "sms.refs",
-            "backup.ack"
+            "backup.ack",
+            "sms.dropped"
           ],
           "limits": {
             "max_frame": 16777216,
@@ -141,7 +145,9 @@
           },
           "sends": {
             "store": "6feebacd6df89e21d7171200838883d5",
-            "keep_ms": 86400000
+            "keep_ms": 86400000,
+            "next_id": 1,
+            "dropped_through": 0
           },
           "auth": {
             "companion_nonce": "*",

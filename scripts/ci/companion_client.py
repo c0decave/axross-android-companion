@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A small client of the axross companion protocol, version 2, revision 1 (docs/PROTOCOL.md).
+"""A small client of the axross companion protocol, version 2, revision 2 (docs/PROTOCOL.md).
 
 Python 3, standard library only. It is the emulator smoke test's client
 and a reference for other clients (the codec is the first fifty lines, the
@@ -275,11 +275,29 @@ class Smoke:
         return Connection(port=self.args.port, timeout=30.0)
 
     def expect_error(self, conn, method, params, code):
+        """Checks that the call is refused with code; returns the error's data (None if it was not refused so)."""
         try:
             conn.call(method, params)
         except CompanionError as e:
-            return self.check(e.code == code, f"{method} refused with {code} (got {e.code})")
-        return self.check(False, f"{method} refused with {code} (it passed)")
+            return e.data if self.check(e.code == code, f"{method} refused with {code} (got {e.code})") else None
+        self.check(False, f"{method} refused with {code} (it passed)")
+        return None
+
+    def never_accepted(self, conn, ref, store, first, what):
+        """sms.status's not_found by client_ref proves "never accepted" (revision 2): the same store, dropped_through < F."""
+        data = self.expect_error(conn, "sms.status", {"client_ref": ref}, "not_found")
+        if data is None:
+            return
+        dropped = data.get("dropped_through")
+        self.check(data.get("store") == store and isinstance(dropped, int) and 0 <= dropped < first,
+                   f"{what}: not_found carries the store and dropped_through {dropped} < next_id {first} (never accepted)")
+
+    @staticmethod
+    def sends_ok(sends):
+        """hello's or status's sends (revision 2): store, keep_ms, next_id, dropped_through, 0 <= dropped_through < next_id."""
+        n, d = sends.get("next_id"), sends.get("dropped_through")
+        return (is_hex(sends.get("store"), 32) and sends.get("keep_ms") == 86400000
+                and isinstance(n, int) and isinstance(d, int) and 0 <= d < n <= 1 << 53)
 
     def export_events(self, conn, exp, window):
         """The export's events to the end; with a window, each backup.items acknowledged (after a ping)."""
@@ -322,13 +340,19 @@ class Smoke:
         self.report = before
         self.report["failures"] = []
         self.report["warnings"] = before.get("warnings", [])
-        self.check((hello.get("sends") or {}).get("store") == before.get("store"),
+        sends = hello.get("sends") or {}
+        self.check(sends.get("store") == before.get("store"),
                    "after the restart: the same send store id")
+        first = sends.get("next_id")
+        self.check(self.sends_ok(sends) and sends.get("dropped_through") == before.get("dropped_through"),
+                   f"after the restart: dropped_through kept ({sends.get('dropped_through')}, was {before.get('dropped_through')})")
         send = before.get("send")
         if not send:
             self.check(False, "after the restart: the first run's send is known")
         else:
             ref, send_id = send["client_ref"], send["send_id"]
+            self.check(isinstance(first, int) and first > send_id,
+                       f"after the restart: next_id {first} goes on after the first run's send {send_id}")
             st = conn.call("sms.status", {"client_ref": ref})
             self.check(st.get("send_id") == send_id and st.get("store") == before.get("store"),
                        f"after the restart: sms.status by client_ref (send_id {send_id})")
@@ -340,7 +364,10 @@ class Smoke:
                        "after the restart: the same client_ref is a duplicate, not sent again")
             time.sleep(3)
             self.check(not [e for e in conn.events if e["event"].startswith("sms.")], "after the restart: no events for the duplicate")
-        self.expect_error(conn, "sms.status", {"client_ref": "never-" + secrets.token_hex(4)}, "not_found")
+        if isinstance(first, int):
+            self.never_accepted(conn, "never-" + secrets.token_hex(4), before.get("store"), first, "after the restart")
+        else:
+            self.expect_error(conn, "sms.status", {"client_ref": "never-" + secrets.token_hex(4)}, "not_found")
         conn.close()
         self.report["restart_failures"] = self.failures
         with open(path, "w") as f:
@@ -358,18 +385,27 @@ class Smoke:
         self.check(hello.get("protocol") == 2, "protocol version 2, the companion's proof checked, auth done")
         self.check(hello.get("app") == "axross-android-companion", "the app's name")
         self.check("sms.send" in hello.get("capabilities", []), "sms.send is a capability")
-        self.check(hello.get("revision") == 1 and {"sms.refs", "backup.ack"} <= set(hello.get("capabilities", [])),
-                   "revision 1, with the capabilities sms.refs and backup.ack")
+        self.check(hello.get("revision") == 2 and {"sms.refs", "backup.ack", "sms.dropped"} <= set(hello.get("capabilities", [])),
+                   "revision 2, with the capabilities sms.refs, backup.ack and sms.dropped")
         sends = hello.get("sends") or {}
         store = sends.get("store")
         self.check(is_hex(store, 32) and sends.get("keep_ms") == 86400000, "hello names the send store (32 hex) and keep_ms")
+        self.check(self.sends_ok(sends), f"hello's sends: next_id {sends.get('next_id')}, dropped_through {sends.get('dropped_through')}")
+        # (F: every send accepted over this session gets an id >= it)
+        first = sends.get("next_id") if isinstance(sends.get("next_id"), int) else 1
         self.report["store"] = store
+        self.report["next_id"] = first
+        self.report["dropped_through"] = sends.get("dropped_through")
         perms = hello.get("permissions", {})
         for p in ("READ_SMS", "SEND_SMS", "RECEIVE_SMS", "READ_CONTACTS", "READ_PHONE_STATE"):
             self.check(perms.get(p) is True, f"{p} granted (pm grant)")
 
         status = conn.call("status")
         self.check(isinstance(status.get("default_sms_app"), bool), "status")
+        st_sends = status.get("sends") or {}
+        self.check(self.sends_ok(st_sends) and st_sends.get("store") == store and st_sends.get("next_id") >= first
+                   and st_sends.get("dropped_through") >= (sends.get("dropped_through") or 0),
+                   "status names the send store as hello does (next_id, dropped_through)")
         pong = conn.call("ping")
         self.check(abs(pong["time"] / 1000 - time.time()) < 3600, "ping (the phone's clock is near ours)")
 
@@ -444,6 +480,7 @@ class Smoke:
         sent = conn.call("sms.send", params)
         send_id = sent["send_id"]
         self.report["send"] = {"client_ref": ref, "send_id": send_id}
+        self.check(send_id >= first, f"the send's id {send_id} is at least hello's next_id {first}")
         self.check(len(sent["recipients"]) == 1 and sent["recipients"][0]["parts"] == 1, f"sms.send accepted (send_id {send_id})")
         self.check(sent.get("duplicate") is False and sent.get("client_ref") == ref, "sms.send: duplicate false, client_ref echoed")
         # the same client_ref again (as after a lost answer): answered, not sent again
@@ -473,7 +510,7 @@ class Smoke:
                    and abs(st["accepted"] / 1000 - pong["time"] / 1000) < 600,
                    "sms.status names the store and the time of acceptance")
         self.report["send"]["state"] = st["recipients"][0]["state"]
-        self.expect_error(conn, "sms.status", {"client_ref": f"never-{token}"}, "not_found")
+        self.never_accepted(conn, f"never-{token}", store, first, "a client_ref never sent")
         self.expect_error(conn, "sms.status", {"send_id": send_id, "client_ref": ref}, "bad_request")
         again_events = [e for e in conn.events if e["event"] == "sms.sent" and e["data"].get("send_id") == send_id]
         self.check(not again_events, "no second sms.sent for the duplicate")

@@ -8,7 +8,7 @@ companion and its client tests can use them too.
 
 | file | what it is |
 |---|---|
-| `schema/protocol-v2.schema.json` | JSON Schema 2020-12. The root validates any JSON frame. `x-methods.<method>.params` / `.result` and `x-events.<event>` point at the `$defs` for each method and event; `x-error-codes` lists the error codes. Unknown fields are allowed everywhere. |
+| `schema/protocol-v2.schema.json` | JSON Schema 2020-12. The root validates any JSON frame. `x-methods.<method>.params` / `.result` and `x-events.<event>` point at the `$defs` for each method and event; `x-error-codes` lists the error codes; `x-error-data.<method>.<code>` points at an error's `data` where a method defines it (revision 2: `sms.status`'s `not_found`, by `client_ref`). Unknown fields are allowed everywhere. |
 | `fixtures/frames.json` | Frames as hex bytes. A case with `kind` decodes to exactly one frame (`json` with that object, or `blob` with that id, LAST flag and data); a case with `error` must make a reader give up on the stream. |
 | `fixtures/requests.json` | Requests and what the companion's parameter check answers: `"expect": "ok"`, or an error code (with `field` for `bad_request` where it is fixed). Only the checks: an `ok` request can still fail on the phone. |
 | `fixtures/sessions/*.json` | Scripted sessions: what the client sends, what the companion answers, given canned phone data. |
@@ -21,7 +21,7 @@ companion and its client tests can use them too.
   "phone": {
     "token": "<64 hex>",
     "hello": { ...hello's result without "protocol" and "auth"... },
-    "sends": {"next_send_id": <n>, "earlier": [ <send>, ... ]},
+    "sends": {"next_send_id": <n>, "dropped_through": <n>, "earlier": [ <send>, ... ]},
     "answers": {
       "<method>": [ <answer>, <answer>, ... ]
     }
@@ -34,12 +34,19 @@ companion and its client tests can use them too.
 
 `sends` (optional; revision 1) is the phone's send store when the session
 starts: its id is `hello.sends.store`, `next_send_id` the id its next send
-gets (default 1), and `earlier` the sends an earlier run of the service
-accepted, oldest first, each `{"send_id", "client_ref" (or null),
-"age_ms" (how long ago it was accepted), "recipients": [{"address",
-"parts", "state", "reason"}]}`. A send older than `keep_ms` plus an hour
-is gone when the session starts; a recipient still `sending` an hour after
-acceptance is `unknown`.
+gets (default 1), `dropped_through` (revision 2; default 0, below
+`next_send_id`) the highest id it dropped before, and `earlier` the sends an
+earlier run of the service accepted, oldest first, each `{"send_id"
+(below `next_send_id`), "client_ref" (or null), "age_ms" (how long ago it
+was accepted), "recipients": [{"address", "parts", "state", "reason"}]}`.
+A send older than `keep_ms` plus an hour is gone when the session starts,
+and counted: `dropped_through` is then at least its id. A recipient still
+`sending` an hour after acceptance is `unknown`.
+
+`hello.sends` (revision 2) is what that store says at the time of `hello`:
+`store`, `keep_ms`, `next_id` (the id the next accepted send gets) and
+`dropped_through`. The companion's test checks that the fixture's values
+are the store's; a fake companion answers them from its own model.
 
 `answers` are what the phone side gives for a method that passed the
 checks, one per call in order. An answer is `{"result": {...}}` or
@@ -69,7 +76,11 @@ send's result and `"duplicate": true`, and sends none of its events; one
 whose `client_ref` an earlier request still checks waits for it and gets
 its result (`"duplicate": true`) or its error. `sms.status` takes no
 answers either: it is answered from the send store (`"accepted"`, the time
-of acceptance, is `"*"` in the expected frames).
+of acceptance, is `"*"` in the expected frames); its `not_found` by
+`client_ref` has `data` `{"store", "dropped_through"}` (revision 2), with
+`dropped_through` as the store has it then. `status` takes its answer from
+the list without `sends`: `sends` (revision 2) is added from the send store,
+as in `hello`, at the time of the answer.
 
 `backup.export`: with `window`, the answer's `backup.items` events go out
 only as `backup.ack`s let them; `backup.ack` and `backup.cancel` take no
@@ -84,6 +95,7 @@ Steps, in order:
 | `{"client_hex": "..."}` | the client sends these raw bytes |
 | `{"client_blob": {"blob", "hex"}}` | the client sends a blob in one chunk (LAST set) |
 | `{"phone_event": {"event", "data"}}` | something happens on the phone: the companion sends the event to the session if it is subscribed to it |
+| `{"phone_clock": {"advance_ms": <n>}}` | the phone's clock jumps by `n` ms (revision 2; e.g. set forward by hand): from now on the send store keeps and drops sends by it (and every later answer sees that), counting each drop in `dropped_through` |
 | `{"companion": {...}}` | the next frame from the companion is a JSON frame that matches |
 | `{"companion_blob": {"blob", "hex"}}` | the next frames are the chunks of this blob, with these bytes in all |
 | `{"companion_closes": true}` | the companion closes the connection (no frame before the end, beyond those listed) |

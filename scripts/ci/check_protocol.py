@@ -13,9 +13,12 @@
 - every step of protocol/fixtures/sessions/*.json validates: client frames
   as requests with their params, companion frames as responses (with the
   result of the method they answer) or events (with their data), the phone
-  answers and events likewise ("*", the fixtures' wildcard, passes); the
-  phone has a token, and every hello names it by its token_id unless the
-  session expects unknown_token;
+  answers and events likewise ("*", the fixtures' wildcard, passes); an
+  error's data against x-error-data where the method defines it (revision
+  2: sms.status's not_found by client_ref carries {store, dropped_through},
+  and every such answer in a revision-2 session has it); the phone has a
+  token, and every hello names it by its token_id unless the session
+  expects unknown_token; a phone_clock step moves the phone's clock;
 - docs/PROTOCOL.md names every method, event and error code of the schema.
 
 A small validator for the subset of JSON Schema the file uses (type,
@@ -136,6 +139,12 @@ def check_schema():
     for name, m in SCHEMA["x-methods"].items():
         if set(m) != {"params", "result"}:
             problems.append(f"schema: x-methods.{name} needs params and result")
+    for method, codes in SCHEMA.get("x-error-data", {}).items():
+        if method not in SCHEMA["x-methods"]:
+            problems.append(f"schema: x-error-data names the unknown method {method}")
+        for code in codes:
+            if code not in SCHEMA["x-error-codes"]:
+                problems.append(f"schema: x-error-data.{method} names the unknown error code {code}")
 
 
 def check_frames():
@@ -204,6 +213,8 @@ def check_sessions():
             token = ""
         codes = {s["companion"]["error"]["code"] for s in doc["steps"]
                  if "companion" in s and s["companion"].get("ok") is False}
+        revision = doc["phone"]["hello"].get("revision", 0)
+        params_of = {}
         for i, step in enumerate(doc["steps"]):
             frame = step.get("client", {})
             if frame.get("method") == "hello" and "token_id" in frame.get("params", {}):
@@ -235,6 +246,7 @@ def check_sessions():
                 frame = step["client"]
                 check(frame, SCHEMA["$defs"]["Request"], where)
                 methods[frame["id"]] = frame["method"]
+                params_of[frame["id"]] = frame.get("params", {})
                 expected = next((s["companion"] for s in doc["steps"][i + 1:]
                                  if "companion" in s and s["companion"].get("id") == frame["id"]), None)
                 if expected is not None and expected.get("ok") is True and frame["method"] in SCHEMA["x-methods"]:
@@ -245,8 +257,16 @@ def check_sessions():
                     if frame["data"] != "*":
                         check_event(frame, where, partial=True)
                 elif frame.get("ok") is False:
-                    if frame["error"]["code"] not in SCHEMA["x-error-codes"]:
+                    code = frame["error"]["code"]
+                    if code not in SCHEMA["x-error-codes"]:
                         problems.append(f"{where}: unknown error code")
+                    method = methods.get(frame["id"])
+                    data_schema = SCHEMA.get("x-error-data", {}).get(method, {}).get(code)
+                    if data_schema is not None and method == "sms.status" and "client_ref" in params_of.get(frame["id"], {}):
+                        if "data" in frame["error"]:
+                            check(frame["error"]["data"], data_schema, where + " error.data")
+                        elif revision >= 2:
+                            problems.append(f"{where}: sms.status's not_found by client_ref has no data (revision 2)")
                 elif frame.get("ok") is True and frame["result"] not in ("=phone",):
                     method = methods.get(frame["id"])
                     result = {k: v for k, v in frame["result"].items() if v != "*"}
@@ -254,6 +274,11 @@ def check_sessions():
                         check(result, SCHEMA["x-methods"][method]["result"], where)
             elif "phone_event" in step:
                 check_event(step["phone_event"], where)
+            elif "phone_clock" in step:
+                c = step["phone_clock"]
+                if not isinstance(c, dict) or set(c) != {"advance_ms"} or not isinstance(c["advance_ms"], int) \
+                        or isinstance(c["advance_ms"], bool):
+                    problems.append(f"{where}: phone_clock is {{\"advance_ms\": <integer>}}")
             elif not any(k in step for k in ("client_text", "client_hex", "client_blob", "companion_blob", "companion_closes")):
                 problems.append(f"{where}: unknown step {sorted(step)}")
     wildcard = False

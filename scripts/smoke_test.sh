@@ -18,9 +18,15 @@
 # by backup.ack (window 1) that answers a ping while it waits. Then eight
 # more tokens push the first one out (unknown_token) and the newest works.
 #
+# Revision 2: hello's and status's sends name next_id and dropped_through,
+# the send's id is at least hello's next_id, and a client_ref never sent is
+# not_found with the store and a dropped_through below next_id ("never
+# accepted").
+#
 # Then the restart (revision 1): the service is stopped and its process
 # killed, the service started again with a new token - the send store must
-# be the same (hello's sends.store), sms.status must still know the send,
+# be the same (hello's sends.store), its dropped_through the same and its
+# next_id past the first run's send, sms.status must still know the send,
 # and the same client_ref again must be a duplicate (not sent again). The
 # fallback start (`am start ... ShellStartActivity --es token`) must hand
 # its token to the service; MainActivity, the launcher's, must not take one.

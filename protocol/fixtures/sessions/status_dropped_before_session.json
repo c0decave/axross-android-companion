@@ -1,0 +1,366 @@
+{
+  "name": "not_found below next_id (never accepted)",
+  "description": "Revision 2. An earlier run accepted two sends: one 26 hours ago (id N - 3), dropped when the store opens - dropped_through is N - 3 - and one an hour ago (N - 1), kept. hello's sends.next_id is N (= F for this session). This session's send is refused (no_subscription): sms.status by its client_ref is not_found with dropped_through N - 3, below F, with the same store - so it was never accepted, and the client may say \"not sent\" and offer to send it again. The dropped send's client_ref is not_found with the same data; the client that sent it recorded an F of at most N - 3 for its session, so for it dropped_through is not below F: \"unknown\". The kept send is found.",
+  "phone": {
+    "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
+    "hello": {
+      "revision": 2,
+      "app": "axross-android-companion",
+      "app_version": "0.1.3",
+      "app_version_code": 103,
+      "package": "io.github.c0decave.axross.companion",
+      "android": {
+        "sdk_int": 34,
+        "release": "14",
+        "manufacturer": "Google",
+        "model": "sdk_gphone64_x86_64"
+      },
+      "capabilities": [
+        "contacts",
+        "contacts.photo",
+        "threads",
+        "messages",
+        "messages.search",
+        "message.mark_read",
+        "message.delete",
+        "sms.send",
+        "sms.status",
+        "mms.parts",
+        "mms.part_data",
+        "subscribe",
+        "subscriptions",
+        "backup.export",
+        "backup.restore",
+        "sms.refs",
+        "backup.ack",
+        "sms.dropped"
+      ],
+      "limits": {
+        "max_frame": 16777216,
+        "max_request_json": 4194304,
+        "max_blob_in": 8388608,
+        "max_blobs_pending": 33554432,
+        "max_blob_out": 67108864,
+        "max_in_flight": 8,
+        "max_recipients": 10,
+        "max_text_chars": 5000,
+        "max_parts": 30,
+        "sends_per_minute": 20,
+        "sends_per_hour": 100,
+        "max_page": 500
+      },
+      "default_sms_app": false,
+      "permissions": {
+        "READ_SMS": true,
+        "SEND_SMS": true,
+        "RECEIVE_SMS": true,
+        "READ_CONTACTS": true,
+        "READ_PHONE_STATE": true,
+        "POST_NOTIFICATIONS": true
+      },
+      "sends": {
+        "store": "6feebacd6df89e21d7171200838883d5",
+        "keep_ms": 86400000,
+        "next_id": 1742318807,
+        "dropped_through": 1742318804
+      }
+    },
+    "sends": {
+      "next_send_id": 1742318807,
+      "earlier": [
+        {
+          "send_id": 1742318804,
+          "client_ref": "0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6b",
+          "age_ms": 93600000,
+          "recipients": [
+            {
+              "address": "+15555215554",
+              "parts": 1,
+              "state": "sent",
+              "reason": null
+            }
+          ]
+        },
+        {
+          "send_id": 1742318806,
+          "client_ref": "0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6c",
+          "age_ms": 3600000,
+          "recipients": [
+            {
+              "address": "+15555215554",
+              "parts": 1,
+              "state": "delivered",
+              "reason": null
+            }
+          ]
+        }
+      ]
+    },
+    "answers": {
+      "sms.send": [
+        {
+          "error": {
+            "code": "no_subscription",
+            "message": "no active SIM with that sub_id"
+          }
+        }
+      ],
+      "status": [
+        {
+          "result": {
+            "default_sms_app": false,
+            "default_sms_package": "com.google.android.apps.messaging",
+            "permissions": {
+              "READ_SMS": true,
+              "SEND_SMS": true,
+              "RECEIVE_SMS": true,
+              "READ_CONTACTS": true,
+              "READ_PHONE_STATE": true,
+              "POST_NOTIFICATIONS": true
+            },
+            "subscribed": [],
+            "sessions": 1
+          }
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "client": {
+        "id": 1,
+        "method": "hello",
+        "params": {
+          "protocols": [
+            2
+          ],
+          "client": "axross",
+          "client_version": "0.15.186",
+          "client_nonce": "3dcdd07d15067a98edb7285e0077180495eee15a99a75fc773bcdf5f636a61ee",
+          "token_id": "8c1b57b8b3a7a0c67ddece853a774618"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "protocol": 2,
+          "revision": 2,
+          "app": "axross-android-companion",
+          "app_version": "0.1.3",
+          "app_version_code": 103,
+          "package": "io.github.c0decave.axross.companion",
+          "android": {
+            "sdk_int": 34,
+            "release": "14",
+            "manufacturer": "Google",
+            "model": "sdk_gphone64_x86_64"
+          },
+          "capabilities": [
+            "contacts",
+            "contacts.photo",
+            "threads",
+            "messages",
+            "messages.search",
+            "message.mark_read",
+            "message.delete",
+            "sms.send",
+            "sms.status",
+            "mms.parts",
+            "mms.part_data",
+            "subscribe",
+            "subscriptions",
+            "backup.export",
+            "backup.restore",
+            "sms.refs",
+            "backup.ack",
+            "sms.dropped"
+          ],
+          "limits": {
+            "max_frame": 16777216,
+            "max_request_json": 4194304,
+            "max_blob_in": 8388608,
+            "max_blobs_pending": 33554432,
+            "max_blob_out": 67108864,
+            "max_in_flight": 8,
+            "max_recipients": 10,
+            "max_text_chars": 5000,
+            "max_parts": 30,
+            "sends_per_minute": 20,
+            "sends_per_hour": 100,
+            "max_page": 500
+          },
+          "default_sms_app": false,
+          "permissions": {
+            "READ_SMS": true,
+            "SEND_SMS": true,
+            "RECEIVE_SMS": true,
+            "READ_CONTACTS": true,
+            "READ_PHONE_STATE": true,
+            "POST_NOTIFICATIONS": true
+          },
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000,
+            "next_id": 1742318807,
+            "dropped_through": 1742318804
+          },
+          "auth": {
+            "companion_nonce": "*",
+            "proof": "*"
+          }
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 2,
+        "method": "auth",
+        "params": {
+          "proof": "*"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 2,
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "client": {
+        "id": 3,
+        "method": "sms.send",
+        "params": {
+          "recipients": [
+            "+15555215554"
+          ],
+          "text": "Hi",
+          "sub_id": 7,
+          "client_ref": "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 3,
+        "ok": false,
+        "error": {
+          "code": "no_subscription",
+          "message": "*"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 4,
+        "method": "sms.status",
+        "params": {
+          "client_ref": "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 4,
+        "ok": false,
+        "error": {
+          "code": "not_found",
+          "message": "*",
+          "data": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "dropped_through": 1742318804
+          }
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 5,
+        "method": "sms.status",
+        "params": {
+          "client_ref": "0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6b"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 5,
+        "ok": false,
+        "error": {
+          "code": "not_found",
+          "message": "*",
+          "data": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "dropped_through": 1742318804
+          }
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 6,
+        "method": "sms.status",
+        "params": {
+          "client_ref": "0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6c"
+        }
+      }
+    },
+    {
+      "companion": {
+        "id": 6,
+        "ok": true,
+        "result": {
+          "send_id": 1742318806,
+          "recipients": [
+            {
+              "index": 0,
+              "address": "+15555215554",
+              "state": "delivered",
+              "reason": null
+            }
+          ],
+          "client_ref": "0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6c",
+          "store": "6feebacd6df89e21d7171200838883d5",
+          "accepted": "*"
+        }
+      }
+    },
+    {
+      "client": {
+        "id": 7,
+        "method": "status",
+        "params": {}
+      }
+    },
+    {
+      "companion": {
+        "id": 7,
+        "ok": true,
+        "result": {
+          "default_sms_app": false,
+          "default_sms_package": "com.google.android.apps.messaging",
+          "permissions": {
+            "READ_SMS": true,
+            "SEND_SMS": true,
+            "RECEIVE_SMS": true,
+            "READ_CONTACTS": true,
+            "READ_PHONE_STATE": true,
+            "POST_NOTIFICATIONS": true
+          },
+          "subscribed": [],
+          "sessions": 1,
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000,
+            "next_id": 1742318807,
+            "dropped_through": 1742318804
+          }
+        }
+      }
+    }
+  ]
+}

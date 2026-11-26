@@ -4,10 +4,10 @@
   "phone": {
     "token": "5afa13f17c48638a818cf4fd0800db3d4ef51302933a4313d3eac1dbabd6f91f",
     "hello": {
-      "revision": 1,
+      "revision": 2,
       "app": "axross-android-companion",
-      "app_version": "0.1.2",
-      "app_version_code": 102,
+      "app_version": "0.1.3",
+      "app_version_code": 103,
       "package": "io.github.c0decave.axross.companion",
       "android": {
         "sdk_int": 34,
@@ -32,7 +32,8 @@
         "backup.export",
         "backup.restore",
         "sms.refs",
-        "backup.ack"
+        "backup.ack",
+        "sms.dropped"
       ],
       "limits": {
         "max_frame": 16777216,
@@ -59,7 +60,9 @@
       },
       "sends": {
         "store": "6feebacd6df89e21d7171200838883d5",
-        "keep_ms": 86400000
+        "keep_ms": 86400000,
+        "next_id": 1,
+        "dropped_through": 0
       }
     },
     "answers": {
@@ -105,10 +108,10 @@
         "ok": true,
         "result": {
           "protocol": 2,
-          "revision": 1,
+          "revision": 2,
           "app": "axross-android-companion",
-          "app_version": "0.1.2",
-          "app_version_code": 102,
+          "app_version": "0.1.3",
+          "app_version_code": 103,
           "package": "io.github.c0decave.axross.companion",
           "android": {
             "sdk_int": 34,
@@ -133,7 +136,8 @@
             "backup.export",
             "backup.restore",
             "sms.refs",
-            "backup.ack"
+            "backup.ack",
+            "sms.dropped"
           ],
           "limits": {
             "max_frame": 16777216,
@@ -160,7 +164,9 @@
           },
           "sends": {
             "store": "6feebacd6df89e21d7171200838883d5",
-            "keep_ms": 86400000
+            "keep_ms": 86400000,
+            "next_id": 1,
+            "dropped_through": 0
           },
           "auth": {
             "companion_nonce": "*",
@@ -223,7 +229,13 @@
             "POST_NOTIFICATIONS": true
           },
           "subscribed": [],
-          "sessions": 1
+          "sessions": 1,
+          "sends": {
+            "store": "6feebacd6df89e21d7171200838883d5",
+            "keep_ms": 86400000,
+            "next_id": 1,
+            "dropped_through": 0
+          }
         }
       }
     },

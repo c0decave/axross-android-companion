@@ -28,7 +28,10 @@ import org.junit.Test;
  * directory, with the fixture's store id, first send id and sends of
  * earlier runs): sms.send's phone result must be what they make of it, its
  * events are fed to them as Android's reports and must come out as the
- * fixture says, and sms.status is theirs. Exports go through the real
+ * fixture says, and sms.status is theirs; hello's and status's "sends" must
+ * be what the store says (revision 2: next_id, dropped_through). The
+ * phone's clock is the computer's plus what the fixture's "phone_clock"
+ * steps moved it by. Exports go through the real
  * {@link Exports} (window, backup.ack). The same files drive axross's fake
  * companion (protocol/README.md).
  */
@@ -46,6 +49,9 @@ public class SessionFixturesTest {
         final Exports exports = new Exports();
         /** Request id -> answered (for an answer's "wait_for"). */
         final Map<Long, CountDownLatch> answered = new ConcurrentHashMap<>();
+        /** How far the "phone_clock" steps moved the phone's clock (ms). */
+        volatile long clockOffset;
+        final RateLimiter.Clock clock = () -> System.currentTimeMillis() + clockOffset;
 
         @SuppressWarnings("unchecked")
         Phone(Map<String, Object> phone, File dir) throws Exception {
@@ -62,8 +68,9 @@ public class SessionFixturesTest {
             String storeId = helloSends == null ? STORE : (String) helloSends.get("store");
             Map<String, Object> s = phone.get("sends") instanceof Map ? (Map<String, Object>) phone.get("sends") : Json.obj();
             long first = s.containsKey("next_send_id") ? (Long) s.get("next_send_id") : 1L;
-            long now = System.currentTimeMillis();
-            store = SendStore.create(dir, storeId, first, System::currentTimeMillis);
+            long dropped = s.containsKey("dropped_through") ? (Long) s.get("dropped_through") : 0L;
+            long now = clock.nowMs();
+            store = SendStore.create(dir, storeId, first, dropped, clock);
             if (s.get("earlier") instanceof List) {
                 for (Object o : (List<Object>) s.get("earlier")) {
                     Map<String, Object> e = (Map<String, Object>) o;
@@ -84,14 +91,22 @@ public class SessionFixturesTest {
                 }
             }
             // (as after a restart: what the store holds, read again)
-            sends = new SendTracker(SendStore.open(dir, System::currentTimeMillis, new java.util.Random()),
-                    new RateLimiter(Protocol.SENDS_PER_MINUTE, Protocol.SENDS_PER_HOUR, System::currentTimeMillis));
+            sends = new SendTracker(SendStore.open(dir, clock, new java.util.Random()),
+                    new RateLimiter(Protocol.SENDS_PER_MINUTE, Protocol.SENDS_PER_HOUR, clock));
             assertEquals("the store opened again", storeId, sends.store().id());
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public Map<String, Object> hello(Session session, Requests.Hello h) {
-            return new HashMap<>(hello);
+            Map<String, Object> out = new HashMap<>(hello);
+            if (hello.get("sends") instanceof Map) {
+                // (revision 2: next_id and dropped_through are the store's, read as Backend does)
+                Map<String, Object> real = Protocol.sends(sends.store());
+                assertEquals("hello's sends: the store's", hello.get("sends"), real);
+                out.put("sends", real);
+            }
+            return out;
         }
 
         @Override
@@ -139,7 +154,7 @@ public class SessionFixturesTest {
                     return;
                 case "sms.status": {
                     Requests.SendQuery q = (Requests.SendQuery) call.value;
-                    Map<String, Object> st = q.clientRef != null ? sends.status(q.clientRef) : sends.status(q.sendId);
+                    Map<String, Object> st = q.clientRef != null ? sends.statusByRef(q.clientRef) : sends.status(q.sendId);
                     if (st == null) {
                         throw new RequestException(ErrorCode.NOT_FOUND, "no such send");
                     }
@@ -162,7 +177,15 @@ public class SessionFixturesTest {
             }
             Map<String, Object> answer = answer(call);
             Map<String, Object> result = new java.util.LinkedHashMap<>((Map<String, Object>) answer.get("result"));
-            results.put(call.id, answer.get("result"));
+            if ("status".equals(call.method)) {
+                // (revision 2: status's sends are the store's, as in hello)
+                Map<String, Object> real = Protocol.sends(sends.store());
+                if (result.containsKey("sends")) {
+                    assertEquals("status's sends: the store's", result.get("sends"), real);
+                }
+                result.put("sends", real);
+            }
+            results.put(call.id, result);
             if (answer.containsKey("blob")) {
                 Map<String, Object> blob = (Map<String, Object>) answer.get("blob");
                 call.okWithBlob(Wire.hex((String) blob.get("hex")), (String) blob.get("mime"), (String) blob.get("key"), result);
@@ -331,6 +354,10 @@ public class SessionFixturesTest {
                     if (session.subscribedTo(name)) {
                         session.event(name, (Map<String, Object>) ev.get("data"));
                     }
+                } else if (step.containsKey("phone_clock")) {
+                    // (the phone's clock jumps, e.g. set by hand: the store expires by it)
+                    Map<String, Object> c = (Map<String, Object>) step.get("phone_clock");
+                    phone.clockOffset += (Long) c.get("advance_ms");
                 } else if (step.containsKey("companion")) {
                     Map<String, Object> got = w.nextJson();
                     match(where, step.get("companion"), got, phone);

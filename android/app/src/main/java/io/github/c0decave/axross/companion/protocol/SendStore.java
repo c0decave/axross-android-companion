@@ -40,6 +40,18 @@ import java.util.Random;
  * corrupt file) is made anew, with a new id and a new random start for the
  * send ids: a client that sees the id change knows that the companion's
  * "not_found" no longer means "never accepted".
+ *
+ * <p>Send ids are given out in order from a counter that is part of
+ * sends.json and written with each accepted send, so they only grow.
+ * {@code dropped_through} (revision 2) is the highest send id the store
+ * has ever dropped - by age, by the size cap, for whatever reason - or 0:
+ * written in the same sends.json as the removal (one rename), never
+ * lowered, made anew only with a new store id. A send is removed from
+ * memory only once that file is on disk, so no answer and no crash can
+ * show a send gone while dropped_through does not count it. With hello's
+ * {@code next_id} - read under the same lock as the counter - a client can
+ * tell "never accepted" from "dropped" without any clock
+ * (docs/PROTOCOL.md, "sms.status").
  */
 public final class SendStore {
     /** A send is kept (and found) for at least this long after acceptance: hello's sends.keep_ms. */
@@ -56,7 +68,11 @@ public final class SendStore {
     public static final long UNKNOWN_AFTER_MS = 3_600_000L;
     /** At most this many sends (the oldest dropped first); the rate limit allows 2400 a day. */
     public static final int MAX_SENDS = 5000;
-    /** Send ids start at a random value in 1..2^31 and stay at or below 2^53 - 1. */
+    /**
+     * Send ids start at a random value in 1..2^31 and stay at or below
+     * 2^53 - 1; they never wrap (past the last one, a send answers
+     * internal - some 10^13 years at the rate limit).
+     */
     public static final long MAX_SEND_ID = (1L << 53) - 1;
     /** sends.json is rewritten (and the journal emptied) after this many journal lines. */
     static final int COMPACT_AFTER = 1000;
@@ -145,7 +161,12 @@ public final class SendStore {
     private final RateLimiter.Clock clock;
     private final Random random;
     private String id;
+    /** The id the next accepted send gets (on disk with every accepted send: they only grow). */
     private long nextId;
+    /** The highest send id ever dropped, or 0 (on disk before or with each removal; never lowered). */
+    private long droppedThrough;
+    /** An expiry's write failed: the sends stay (in memory and found) until a write works again. */
+    private boolean expiryBlocked;
     /** The journal's last line (sends.json holds every line up to {@link #snapshotSeq}). */
     private long seq;
     private long snapshotSeq;
@@ -181,6 +202,34 @@ public final class SendStore {
 
     public synchronized Origin origin() {
         return origin;
+    }
+
+    /** The id the next accepted send will get. */
+    public synchronized long nextId() {
+        return nextId;
+    }
+
+    /** The highest send id the store has ever dropped (0: none). */
+    public synchronized long droppedThrough() {
+        expire();
+        return droppedThrough;
+    }
+
+    /**
+     * hello's and status's "sends" (revision 2): {store, keep_ms, next_id,
+     * dropped_through}, read together under the store's lock - the lock
+     * that {@link #add} gives ids out under, so that every send accepted
+     * after this answer has an id of at least next_id.
+     */
+    public synchronized Map<String, Object> describe() {
+        expire();
+        return Json.obj("store", id, "keep_ms", KEEP_MS, "next_id", nextId, "dropped_through", droppedThrough);
+    }
+
+    /** sms.status's not_found by client_ref (revision 2): {store, dropped_through}. */
+    public synchronized Map<String, Object> notFound() {
+        expire();
+        return Json.obj("store", id, "dropped_through", droppedThrough);
     }
 
     /** Writes that failed since the store was opened (the journal's; an accepted send's fails the send). */
@@ -232,20 +281,28 @@ public final class SendStore {
         for (int i = 0; i < addresses.size(); i++) {
             recipients.add(new Recipient(addresses.get(i), parts.get(i)));
         }
+        if (nextId > MAX_SEND_ID) {
+            // (never wraps: ids only grow)
+            throw new IOException("no send ids left");
+        }
         Send send = new Send(nextId, clientRef, clock.nowMs(), Collections.unmodifiableList(recipients));
         List<Send> after = new ArrayList<>(sends.values());
         after.add(send);
+        long dropped = droppedThrough;
         while (after.size() > maxSends) {
-            after.remove(0);
+            // (the cap: the oldest goes, counted in the same write)
+            dropped = Math.max(dropped, after.remove(0).id);
         }
-        long next = nextId >= MAX_SEND_ID ? 1 : nextId + 1;
+        long next = nextId + 1;
         try {
-            writeSnapshot(id, next, seq, after);
+            writeSnapshot(id, next, seq, dropped, after);
         } catch (IOException e) {
             writeFailures++;
             throw e;
         }
         nextId = next;
+        droppedThrough = dropped;
+        expiryBlocked = false;
         snapshotSeq = seq;
         sends.clear();
         refs.clear();
@@ -388,9 +445,46 @@ public final class SendStore {
         }
     }
 
-    /** Drops the sends past {@link #KEEP_MS} + {@link #GRACE_MS} (in memory; the next write leaves them out). */
+    /**
+     * Drops the sends past {@link #KEEP_MS} + {@link #GRACE_MS} by the
+     * phone's clock (which may jump: dropped_through is what a client
+     * relies on, not the age). sends.json without them and with
+     * dropped_through raised is written first; only then are they removed.
+     * If that write fails they stay (found, which is true) until a write
+     * works again.
+     */
     private void expire() {
+        if (expiryBlocked) {
+            return;
+        }
         long limit = clock.nowMs() - KEEP_MS - GRACE_MS;
+        List<Send> after = null;
+        long dropped = droppedThrough;
+        for (Send s : sends.values()) {
+            if (s.accepted < limit) {
+                if (after == null) {
+                    after = new ArrayList<>();
+                    for (Send k : sends.values()) {
+                        if (k.accepted >= limit) {
+                            after.add(k);
+                        }
+                    }
+                }
+                dropped = Math.max(dropped, s.id);
+            }
+        }
+        if (after == null) {
+            return;
+        }
+        try {
+            writeSnapshot(id, nextId, seq, dropped, after);
+        } catch (IOException e) {
+            writeFailures++;
+            expiryBlocked = true;
+            return;
+        }
+        droppedThrough = dropped;
+        snapshotSeq = seq;
         for (Iterator<Send> it = sends.values().iterator(); it.hasNext(); ) {
             Send s = it.next();
             if (s.accepted < limit) {
@@ -400,6 +494,7 @@ public final class SendStore {
                 }
             }
         }
+        clearJournal();
     }
 
     private void load() {
@@ -438,12 +533,14 @@ public final class SendStore {
         id = Tokens.hex(b);
         // (1 .. 2^31)
         nextId = 1 + (random.nextLong() >>> 33);
+        droppedThrough = 0;
+        expiryBlocked = false;
         seq = 0;
         snapshotSeq = 0;
         new File(dir, JOURNAL).delete();
         journalLines = 0;
         try {
-            writeSnapshot(id, nextId, seq, new ArrayList<Send>());
+            writeSnapshot(id, nextId, seq, droppedThrough, new ArrayList<Send>());
         } catch (IOException e) {
             writeFailures++;
         }
@@ -461,7 +558,8 @@ public final class SendStore {
         }
         long next = (Long) doc.get("next_send_id");
         long lastSeq = (Long) doc.get("seq");
-        if (next < 1 || next > MAX_SEND_ID || lastSeq < 0) {
+        // (MAX_SEND_ID + 1: every id given out)
+        if (next < 1 || next > MAX_SEND_ID + 1 || lastSeq < 0) {
             throw new Json.ParseException("counters");
         }
         for (Object o : (List<Object>) doc.get("sends")) {
@@ -489,14 +587,30 @@ public final class SendStore {
                 }
                 recipients.add(r);
             }
-            if (sendId < 1 || recipients.isEmpty() || sends.containsKey(sendId)
+            if (sendId < 1 || sendId >= next || recipients.isEmpty() || sends.containsKey(sendId)
                     || (clientRef != null && refs.containsKey(clientRef))) {
                 throw new Json.ParseException("send");
             }
             put(new Send(sendId, clientRef, accepted, Collections.unmodifiableList(recipients)));
         }
+        long dropped;
+        if (doc.containsKey("dropped_through")) {
+            dropped = (Long) doc.get("dropped_through");
+            if (dropped < 0 || dropped >= next) {
+                throw new Json.ParseException("dropped_through");
+            }
+        } else {
+            // (written by 0.1.2, which did not count its drops: every id below
+            // next_send_id that it does not hold may have been dropped - ids
+            // were given out one after the other - so the highest of them counts)
+            dropped = next - 1;
+            while (dropped >= 1 && sends.containsKey(dropped)) {
+                dropped--;
+            }
+        }
         id = storeId;
         nextId = next;
+        droppedThrough = dropped;
         seq = lastSeq;
         snapshotSeq = lastSeq;
     }
@@ -572,8 +686,9 @@ public final class SendStore {
         }
         if (journalLines >= COMPACT_AFTER) {
             try {
-                writeSnapshot(id, nextId, seq, new ArrayList<>(sends.values()));
+                writeSnapshot(id, nextId, seq, droppedThrough, new ArrayList<>(sends.values()));
                 snapshotSeq = seq;
+                expiryBlocked = false;
                 clearJournal();
             } catch (IOException e) {
                 writeFailures++;
@@ -591,7 +706,7 @@ public final class SendStore {
     }
 
     /** sends.json: written to a temporary file, synced, renamed over the old one. */
-    private void writeSnapshot(String storeId, long next, long lastSeq, List<Send> list) throws IOException {
+    private void writeSnapshot(String storeId, long next, long lastSeq, long dropped, List<Send> list) throws IOException {
         List<Object> out = new ArrayList<>();
         for (Send s : list) {
             List<Object> rs = new ArrayList<>();
@@ -603,7 +718,7 @@ public final class SendStore {
             out.add(Json.obj("send_id", s.id, "client_ref", s.clientRef, "accepted", s.accepted, "recipients", rs));
         }
         byte[] bytes = Json.write(Json.obj("format", FORMAT, "version", VERSION, "store", storeId,
-                "next_send_id", next, "seq", lastSeq, "sends", out)).getBytes(StandardCharsets.UTF_8);
+                "next_send_id", next, "dropped_through", dropped, "seq", lastSeq, "sends", out)).getBytes(StandardCharsets.UTF_8);
         if (!dir.isDirectory() && !dir.mkdirs()) {
             throw new IOException("no directory");
         }
@@ -642,19 +757,31 @@ public final class SendStore {
 
     // -- for the tests (a phone with earlier sends) -----------------------------------------
 
-    /** A store with this id and first send id, in an empty {@code dir}. */
-    static SendStore create(File dir, String storeId, long firstSendId, RateLimiter.Clock clock) throws IOException {
+    /** A store with this id, first send id and dropped_through, in an empty {@code dir}. */
+    static SendStore create(File dir, String storeId, long firstSendId, long droppedThrough, RateLimiter.Clock clock)
+            throws IOException {
+        if (droppedThrough < 0 || droppedThrough >= firstSendId) {
+            throw new IllegalArgumentException("dropped_through must be below the first send id");
+        }
         SendStore s = new SendStore(dir, clock, new Random(0));
         s.origin = Origin.NEW;
         s.id = storeId;
         s.nextId = firstSendId;
-        s.writeSnapshot(storeId, firstSendId, 0, new ArrayList<Send>());
+        s.droppedThrough = droppedThrough;
+        s.writeSnapshot(storeId, firstSendId, 0, droppedThrough, new ArrayList<Send>());
         return s;
+    }
+
+    static SendStore create(File dir, String storeId, long firstSendId, RateLimiter.Clock clock) throws IOException {
+        return create(dir, storeId, firstSendId, 0, clock);
     }
 
     /** Records a send of an earlier run: accepted at {@code accepted}, its recipients in these states. */
     synchronized void seed(long sendId, String clientRef, long accepted, List<String> addresses, List<Integer> parts,
             List<String> states, List<String> reasons) throws IOException {
+        if (sendId < 1 || sendId >= nextId || sends.containsKey(sendId)) {
+            throw new IllegalArgumentException("an earlier send's id is new and below next_send_id");
+        }
         List<Recipient> rs = new ArrayList<>();
         for (int i = 0; i < addresses.size(); i++) {
             Recipient r = new Recipient(addresses.get(i), parts.get(i));
@@ -669,6 +796,6 @@ public final class SendStore {
             rs.add(r);
         }
         put(new Send(sendId, clientRef, accepted, Collections.unmodifiableList(rs)));
-        writeSnapshot(id, nextId, seq, new ArrayList<>(sends.values()));
+        writeSnapshot(id, nextId, seq, droppedThrough, new ArrayList<>(sends.values()));
     }
 }

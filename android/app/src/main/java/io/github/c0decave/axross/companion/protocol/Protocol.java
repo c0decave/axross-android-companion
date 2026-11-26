@@ -11,9 +11,12 @@ public final class Protocol {
     /**
      * Additions within the version that old clients can ignore: 1 (companion
      * 0.1.2) - hello's "revision" and "sends", the send store across runs,
-     * "pending" in sms.status, client_ref in the sms.* events, backup.ack.
+     * "pending" in sms.status, client_ref in the sms.* events, backup.ack;
+     * 2 (companion 0.1.3) - "next_id" and "dropped_through" in hello's and
+     * status's "sends" and in sms.status's not_found, the capability
+     * sms.dropped.
      */
-    public static final int REVISION = 1;
+    public static final int REVISION = 2;
     public static final List<Long> SUPPORTED = Collections.singletonList(2L);
 
     /** The abstract socket's name (localabstract:axross-companion). */
@@ -42,7 +45,7 @@ public final class Protocol {
             "contacts", "contacts.photo", "threads", "messages", "messages.search",
             "message.mark_read", "message.delete", "sms.send", "sms.status", "mms.parts",
             "mms.part_data", "subscribe", "subscriptions", "backup.export", "backup.restore",
-            "sms.refs", "backup.ack"));
+            "sms.refs", "backup.ack", "sms.dropped"));
 
     /** The events a session can subscribe to. */
     public static final List<String> SUBSCRIBABLE = Collections.unmodifiableList(Arrays.asList(
@@ -56,9 +59,13 @@ public final class Protocol {
     private Protocol() {
     }
 
-    /** hello's "sends": the send store's id and how long a send is kept. */
-    public static Map<String, Object> sends(String storeId) {
-        return Json.obj("store", storeId, "keep_ms", SendStore.KEEP_MS);
+    /**
+     * hello's and status's "sends": the send store's id, how long a send is
+     * kept, the id of the next accepted send and the highest id ever
+     * dropped ({@link SendStore#describe}).
+     */
+    public static Map<String, Object> sends(SendStore store) {
+        return store.describe();
     }
 
     public static Map<String, Object> limits() {

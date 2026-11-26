@@ -286,4 +286,66 @@ public class SendTrackerTest {
         assertEquals("failed", SendTracker.deliveryStatus(0x40, false));
         assertEquals("pending", SendTracker.deliveryStatus(2 << 16, true));
     }
+
+    /**
+     * Revision 2: sms.status by client_ref answers not_found with the store
+     * and dropped_through, and the client's rule holds - "never accepted"
+     * exactly when dropped_through is below hello's next_id (F) of the
+     * session it sent over - whatever the phone's clock did.
+     */
+    @Test
+    public void notFoundCarriesDroppedThrough() throws Exception {
+        SendStoreTest.Clock clock = new SendStoreTest.Clock();
+        File dir = SendStoreTest.dir();
+        SendTracker t = tracker(dir, clock, 20);
+        String store = t.store().id();
+        // session 1: hello (F1), a send that is accepted, one that is refused
+        long f1 = t.store().nextId();
+        long accepted = (Long) send(t, call("acc"), "acc").get("send_id");
+        assertTrue(accepted >= f1);
+        Session.Call refused = call("ref");
+        t.arrive(refused, "ref");
+        assertNull(t.resolve(refused, "ref"));
+        refused.fail(new RequestException(ErrorCode.NO_SUBSCRIPTION, "no SIM"));
+        RequestException nf = notFound(t, "ref");
+        assertEquals(Json.obj("store", store, "dropped_through", 0L), nf.data);
+        // never accepted: dropped_through (0) < F1
+        assertTrue((Long) nf.data.get("dropped_through") < f1);
+
+        // the phone's clock jumps two days ahead: "acc" is dropped, and says so
+        clock.now += 2 * SendStore.KEEP_MS;
+        nf = notFound(t, "acc");
+        assertEquals(store, nf.data.get("store"));
+        assertEquals(accepted, nf.data.get("dropped_through"));
+        // so the client may not conclude "never accepted" - for "ref" neither now
+        assertTrue((Long) notFound(t, "acc").data.get("dropped_through") >= f1);
+        assertTrue((Long) notFound(t, "ref").data.get("dropped_through") >= f1);
+
+        // session 2 after a restart, F2 past the drop: a ref that never came is "never accepted"
+        SendTracker u = tracker(dir, clock, 20);
+        long f2 = u.store().nextId();
+        assertTrue((Long) notFound(u, "never").data.get("dropped_through") < f2);
+        assertEquals(Json.obj("store", store, "keep_ms", SendStore.KEEP_MS, "next_id", f2, "dropped_through", accepted),
+                Protocol.sends(u.store()));
+
+        // pending still answers pending, not not_found
+        Session.Call c = call("p");
+        u.arrive(c, "p");
+        assertEquals(true, u.statusByRef("p").get("pending"));
+        assertNull(u.resolve(c, "p"));
+        u.accept(c, "p", 4, ONE, PARTS);
+        c.ok(Json.obj());
+        assertEquals(f2, u.statusByRef("p").get("send_id"));
+    }
+
+    private static RequestException notFound(SendTracker t, String ref) {
+        try {
+            t.statusByRef(ref);
+        } catch (RequestException e) {
+            assertEquals(ErrorCode.NOT_FOUND, e.code);
+            assertNotNull(e.data);
+            return e;
+        }
+        throw new AssertionError("found: " + ref);
+    }
 }

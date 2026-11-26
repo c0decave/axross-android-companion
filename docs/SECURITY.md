@@ -98,7 +98,8 @@ itself returned).
   storage. It holds, for each SMS the companion sent in the last day (at
   most 5000), the client_ref, the send id, the recipients' numbers (as
   normalized), the number of parts, the time and each recipient's state -
-  **never the text**. A send is dropped a day (plus an hour) after it was
+  **never the text** - and three things of the store itself: its random
+  id, the next send id and the highest send id it dropped. A send is dropped a day (plus an hour) after it was
   accepted. Nothing is backed up or moved to another device
   (`allowBackup="false"`, `no_backup/`, data extraction rules that exclude
   everything); clearing the app's data or uninstalling it deletes the

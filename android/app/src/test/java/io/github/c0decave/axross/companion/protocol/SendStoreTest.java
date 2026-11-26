@@ -14,10 +14,17 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 
 /** The send store on disk: what survives a restart of the service (a new store over the same files). */
@@ -314,5 +321,312 @@ public class SendStoreTest {
                 assertEquals("delivered", t.state(t.byId(x.id), i));
             }
         }
+    }
+
+    // -- revision 2: next_id and dropped_through --------------------------------------------
+
+    private static long nextId(SendStore s) {
+        return (Long) s.describe().get("next_id");
+    }
+
+    private static long droppedThrough(SendStore s) {
+        return (Long) s.describe().get("dropped_through");
+    }
+
+    private static Map<String, Object> file(File dir) throws Exception {
+        return Json.parseObject(new String(Files.readAllBytes(new File(dir, SendStore.FILE).toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void describeIsHellosSends() throws Exception {
+        Clock clock = new Clock();
+        SendStore s = open(dir(), clock);
+        long first = nextId(s);
+        assertEquals(Json.obj("store", s.id(), "keep_ms", SendStore.KEEP_MS, "next_id", first, "dropped_through", 0L),
+                s.describe());
+        assertEquals(s.describe(), Protocol.sends(s));
+        assertEquals(first, s.add("a", ONE, Arrays.asList(1)).id);
+        assertEquals(first + 1, nextId(s));
+        assertEquals(Json.obj("store", s.id(), "dropped_through", 0L), s.notFound());
+    }
+
+    @Test
+    public void droppedThroughSurvivesARestart() throws Exception {
+        Clock clock = new Clock();
+        File dir = dir();
+        SendStore s = open(dir, clock);
+        SendStore.Send a = s.add("a", ONE, Arrays.asList(1));
+        clock.now += 1000;
+        SendStore.Send b = s.add("b", ONE, Arrays.asList(1));
+        clock.now += SendStore.KEEP_MS + SendStore.GRACE_MS - 500;
+        // (a is past keep_ms and the grace, b not yet)
+        assertNull(s.byRef("a"));
+        assertNotNull(s.byRef("b"));
+        assertEquals(a.id, droppedThrough(s));
+        // on disk with the removal: the file has no a, and says so
+        Map<String, Object> f = file(dir);
+        assertEquals(a.id, f.get("dropped_through"));
+        assertEquals(1, ((List<?>) f.get("sends")).size());
+        // the next run reads it - also with the phone's clock set back, a stays dropped
+        clock.now -= 7 * SendStore.KEEP_MS;
+        SendStore t = open(dir, clock);
+        assertEquals(SendStore.Origin.LOADED, t.origin());
+        assertEquals(a.id, droppedThrough(t));
+        assertNull(t.byRef("a"));
+        assertNotNull(t.byRef("b"));
+        assertEquals(b.id + 1, nextId(t));
+        // a new store (data cleared) starts at 0 again, with a new id
+        new File(dir, SendStore.FILE).delete();
+        SendStore n = open(dir, clock);
+        assertNotEquals(s.id(), n.id());
+        assertEquals(0, droppedThrough(n));
+    }
+
+    @Test
+    public void droppedThroughNeverDecreases() throws Exception {
+        Clock clock = new Clock();
+        File dir = dir();
+        SendStore s = open(dir, clock);
+        long start = clock.now;
+        SendStore.Send a = s.add("a", ONE, Arrays.asList(1));
+        // the phone's clock goes back two days: b, a higher id, is "older" than a
+        clock.now = start - 2 * SendStore.KEEP_MS;
+        SendStore.Send b = s.add("b", ONE, Arrays.asList(1));
+        assertTrue(b.id > a.id);
+        // b expires first (ids need not be dropped in order) ...
+        clock.now = b.accepted + SendStore.KEEP_MS + SendStore.GRACE_MS + 1;
+        assertNull(s.byRef("b"));
+        assertNotNull(s.byRef("a"));
+        assertEquals(b.id, droppedThrough(s));
+        // ... then a, a lower id: dropped_through stays b's
+        clock.now = a.accepted + SendStore.KEEP_MS + SendStore.GRACE_MS + 1;
+        assertNull(s.byRef("a"));
+        assertEquals(b.id, droppedThrough(s));
+        assertEquals(b.id, droppedThrough(open(dir, clock)));
+        // and the cap dropping a lower id later does not lower it either
+        SendStore t = open(dir, clock);
+        t.maxSends = 1;
+        long c = t.add("c", ONE, Arrays.asList(1)).id;
+        t.add("d", ONE, Arrays.asList(1));
+        assertEquals(c, droppedThrough(t));
+        assertTrue(c > b.id);
+        long[] seen = {0};
+        for (int i = 0; i < 20; i++) {
+            clock.now += SendStore.KEEP_MS / 4;
+            t.add("e" + i, ONE, Arrays.asList(1));
+            long now = droppedThrough(t);
+            assertTrue(now >= seen[0]);
+            seen[0] = now;
+            assertEquals(now, droppedThrough(open(dir, clock)));
+        }
+    }
+
+    @Test
+    public void theCapCountsWhatItDrops() throws Exception {
+        Clock clock = new Clock();
+        File dir = dir();
+        SendStore s = open(dir, clock);
+        s.maxSends = 3;
+        List<Long> ids = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            ids.add(s.add("r" + i, ONE, Arrays.asList(1)).id);
+        }
+        assertEquals(0, droppedThrough(s));
+        ids.add(s.add("r3", ONE, Arrays.asList(1)).id);
+        // r0 went in the same write that added r3
+        assertNull(s.byRef("r0"));
+        assertEquals((long) ids.get(0), droppedThrough(s));
+        Map<String, Object> f = file(dir);
+        assertEquals(ids.get(0), f.get("dropped_through"));
+        assertEquals(ids.get(3) + 1, (long) (Long) f.get("next_send_id"));
+        assertEquals(3, ((List<?>) f.get("sends")).size());
+        ids.add(s.add("r4", ONE, Arrays.asList(1)).id);
+        assertEquals((long) ids.get(1), droppedThrough(s));
+        assertEquals((long) ids.get(1), droppedThrough(open(dir, clock)));
+        // every id below next_id is kept or counted: the client's rule
+        long next = nextId(s);
+        for (long id = ids.get(0); id < next; id++) {
+            assertTrue(s.byId(id) != null || id <= droppedThrough(s));
+        }
+    }
+
+    @Test
+    public void aForwardClockJumpShowsInDroppedThrough() throws Exception {
+        Clock clock = new Clock();
+        File dir = dir();
+        SendStore s = open(dir, clock);
+        s.add("before", ONE, Arrays.asList(1));
+        // hello: F; the session's send; the answer is lost
+        long f = nextId(s);
+        SendStore.Send mine = s.add("mine", ONE, Arrays.asList(1));
+        assertTrue(mine.id >= f);
+        // the phone's clock jumps 30 days ahead (set by hand); the client asks minutes later
+        clock.now += 30 * SendStore.KEEP_MS;
+        assertNull(s.byRef("mine"));
+        Map<String, Object> nf = s.notFound();
+        assertEquals(s.id(), nf.get("store"));
+        assertTrue((Long) nf.get("dropped_through") >= f);
+        assertEquals(mine.id, nf.get("dropped_through"));
+        // the clock is put right and the service restarts: still counted, still gone
+        clock.now -= 30 * SendStore.KEEP_MS;
+        SendStore t = open(dir, clock);
+        assertNull(t.byRef("mine"));
+        assertEquals(mine.id, droppedThrough(t));
+        // a ref of a session after it (new F) that never came: dropped_through < F
+        long g = nextId(t);
+        assertTrue(droppedThrough(t) < g);
+    }
+
+    @Test
+    public void aDropIsOnDiskBeforeTheSendIsGone() throws Exception {
+        Clock clock = new Clock();
+        File dir = dir();
+        SendStore s = open(dir, clock);
+        SendStore.Send a = s.add("a", ONE, Arrays.asList(1));
+        clock.now += SendStore.KEEP_MS + SendStore.GRACE_MS + 1;
+        // sends.json cannot be written (its temporary file's name is taken by a directory)
+        File block = new File(dir, SendStore.TEMP);
+        assertTrue(block.mkdir());
+        int failures = s.writeFailures();
+        // the send stays (found, which is true), dropped_through is not raised
+        assertNotNull(s.byRef("a"));
+        assertEquals(0, droppedThrough(s));
+        assertEquals(Json.obj("store", s.id(), "dropped_through", 0L), s.notFound());
+        assertTrue(s.writeFailures() > failures);
+        // a "crash": the next run reads what is on disk - the send, not dropped
+        SendStore crashed = open(dir, new Clock());
+        assertNotNull(crashed.byRef("a"));
+        assertEquals(0, droppedThrough(crashed));
+        // writable again: after the next write that works (an accepted send), it is dropped and counted
+        assertTrue(block.delete());
+        SendStore.Send b = s.add("b", ONE, Arrays.asList(1));
+        assertNull(s.byRef("a"));
+        assertNotNull(s.byRef("b"));
+        assertEquals(a.id, droppedThrough(s));
+        assertEquals(a.id, droppedThrough(open(dir, clock)));
+        assertTrue(b.id > a.id);
+    }
+
+    @Test
+    public void aStoreOf012CountsWhatItMayHaveDropped() throws Exception {
+        Clock clock = new Clock();
+        String sends = "[" + send012(1000) + "," + send012(1002) + "," + send012(1003) + "]";
+        // (no dropped_through: 1001 is missing, and 1000 might not be the first)
+        File dir = dir();
+        write012(dir, 1004, sends);
+        SendStore s = open(dir, clock);
+        assertEquals(SendStore.Origin.LOADED, s.origin());
+        assertEquals(1001, droppedThrough(s));
+        assertEquals(1004, nextId(s));
+        // written back with the field
+        s.add("x", ONE, Arrays.asList(1));
+        assertEquals(1001L, file(dir).get("dropped_through"));
+        // all ids up to next kept: the one below the lowest counts; none kept: next - 1
+        File d2 = dir();
+        write012(d2, 1004, "[" + send012(1002) + "," + send012(1003) + "]");
+        assertEquals(1001, droppedThrough(open(d2, clock)));
+        File d3 = dir();
+        write012(d3, 1004, "[]");
+        assertEquals(1003, droppedThrough(open(d3, clock)));
+        File d4 = dir();
+        write012(d4, 1, "[]");
+        assertEquals(0, droppedThrough(open(d4, clock)));
+    }
+
+    private static String send012(long id) {
+        return "{\"send_id\": " + id + ", \"client_ref\": \"r" + id + "\", \"accepted\": 1764150000000, \"recipients\": "
+                + "[{\"address\": \"+15555215554\", \"parts\": 1, \"sent_parts\": 1, \"delivered_parts\": 0, "
+                + "\"delivery_pending\": false, \"state\": \"sent\", \"reason\": null}]}";
+    }
+
+    private static void write012(File dir, long next, String sends) throws IOException {
+        String doc = "{\"format\": \"axross-companion-sends\", \"version\": 1, \"store\": \"6feebacd6df89e21d7171200838883d5\", "
+                + "\"next_send_id\": " + next + ", \"seq\": 0, \"sends\": " + sends + "}";
+        Files.write(new File(dir, SendStore.FILE).toPath(), doc.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void badCountersMakeTheStoreAnew() throws Exception {
+        Clock clock = new Clock();
+        String base = "{\"format\": \"axross-companion-sends\", \"version\": 1, \"store\": \"6feebacd6df89e21d7171200838883d5\", "
+                + "\"seq\": 0, ";
+        for (String bad : new String[] {
+                // dropped_through at or above next_send_id, or negative
+                "\"next_send_id\": 5, \"dropped_through\": 5, \"sends\": []}",
+                "\"next_send_id\": 5, \"dropped_through\": -1, \"sends\": []}",
+                // a send at or above next_send_id (ids would repeat)
+                "\"next_send_id\": 5, \"dropped_through\": 0, \"sends\": [" + send012(5) + "]}"}) {
+            File dir = dir();
+            Files.write(new File(dir, SendStore.FILE).toPath(), (base + bad).getBytes(StandardCharsets.UTF_8));
+            SendStore s = open(dir, clock);
+            assertEquals(bad, SendStore.Origin.UNREADABLE, s.origin());
+            assertNotEquals(bad, "6feebacd6df89e21d7171200838883d5", s.id());
+        }
+    }
+
+    @Test
+    public void sendIdsNeverWrap() throws Exception {
+        Clock clock = new Clock();
+        File dir = dir();
+        SendStore s = SendStore.create(dir, "6feebacd6df89e21d7171200838883d5", SendStore.MAX_SEND_ID, clock);
+        assertEquals(SendStore.MAX_SEND_ID, s.add("last", ONE, Arrays.asList(1)).id);
+        try {
+            s.add("after", ONE, Arrays.asList(1));
+            fail("an id past the last");
+        } catch (IOException expected) {
+            // (internal: not sent)
+        }
+        SendStore t = open(dir, clock);
+        assertEquals(SendStore.Origin.LOADED, t.origin());
+        assertEquals(SendStore.MAX_SEND_ID + 1, nextId(t));
+        assertNotNull(t.byRef("last"));
+        assertNull(t.byRef("after"));
+    }
+
+    /**
+     * hello's next_id is read under the lock ids are given out under: a
+     * send accepted after it was read never has a lower id, and no id
+     * given out before it is at or above it.
+     */
+    @Test
+    public void nextIdIsReadUnderTheAllocationLock() throws Exception {
+        final Clock clock = new Clock();
+        final SendStore s = open(dir(), clock);
+        final List<Long> all = Collections.synchronizedList(new ArrayList<Long>());
+        ExecutorService pool = Executors.newFixedThreadPool(6);
+        List<Future<?>> jobs = new ArrayList<>();
+        for (int w = 0; w < 6; w++) {
+            final int worker = w;
+            jobs.add(pool.submit(() -> {
+                long last = 0;
+                for (int i = 0; i < 150; i++) {
+                    // the highest id this thread knows was given out before the "hello"
+                    long known = last;
+                    long f = (Long) s.describe().get("next_id");
+                    assertTrue("an id given out before is below next_id", known < f);
+                    long id;
+                    try {
+                        id = s.add(worker + "-" + i, ONE, Arrays.asList(1)).id;
+                    } catch (IOException e) {
+                        throw new AssertionError(e);
+                    }
+                    assertTrue("a send after hello has an id >= next_id", id >= f);
+                    assertTrue("ids grow", id > last);
+                    last = id;
+                    all.add(id);
+                }
+                return null;
+            }));
+        }
+        for (Future<?> j : jobs) {
+            j.get(60, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+        assertEquals(900, new HashSet<>(all).size());
+        long min = Collections.min(all);
+        long max = Collections.max(all);
+        // consecutive: one counter, no gaps, no repeats
+        assertEquals(899, max - min);
+        assertEquals(max + 1, nextId(s));
     }
 }

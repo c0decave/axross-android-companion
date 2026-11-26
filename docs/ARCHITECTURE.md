@@ -19,7 +19,8 @@ android/app/src/main/java/io/github/c0decave/axross/companion/
     MessageOrder     the cursor's order and the provider selections after it
     SendStore        the accepted sends on disk (sends.json, atomic; a
                      journal of Android's reports): states, "unknown",
-                     the store id, the send-id counter, keep_ms
+                     the store id, the send-id counter, keep_ms,
+                     dropped_through (revision 2)
     SendTracker      over the store: client_refs being checked ("pending"),
                      duplicates (also across runs), the rate limit,
                      sms.status, the sms.* events and their session
@@ -106,6 +107,27 @@ random start per store, so they do not repeat across runs. "unknown" is a
 rule, not a guess: a recipient still "sending" an hour after acceptance
 stays "unknown", and later reports are ignored, so an answer never changes
 back.
+
+**What was dropped, counted (revision 2).** "not_found" by `client_ref`
+must not depend on a clock: the store drops sends by the phone's clock
+(`keep_ms` plus the grace), the client judged the age by its own, and a
+phone clock set forward made a sent message "not found", then "not sent".
+So the store counts what it drops. `dropped_through`, the running maximum
+of every dropped send id (by age, by the cap), is a field of sends.json:
+the cap drops in the same write that adds the new send; an expiry writes
+sends.json without the expired sends and with the new maximum first, and
+removes them from memory only when that worked (a failed write keeps them,
+found, until a write works again). So no answer and no crash shows a send
+gone that `dropped_through` does not count. Send ids are given out one by
+one from the counter in the same file, under the store's lock, and never
+wrap; `hello` reads `next_id` under that lock - on the reader thread,
+before any request of the session is read - so every send of the session
+has an id at least that. The client keeps `next_id` per session: a
+`not_found` with the same store and `dropped_through` below it is "never
+accepted". A store written by 0.1.2 has no `dropped_through`; it is taken
+as the highest id below its counter that it does not hold (ids were given
+out consecutively, so every such id was dropped, or below the random
+start), which may overstate it but never understates it.
 
 The registration of a `client_ref` as "being checked" happens on the
 session's reader thread, as the request is read (`Session.Handler.arrived`)
