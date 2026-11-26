@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.1.1 (2026-11-26)
+
+Protocol version 2 (docs/PROTOCOL.md). axross must speak it too: a client
+of version 1 gets `unsupported_protocol`.
+
+- The client checks the companion. axross starts the service with a token
+  (`am start-foreground-service ... --es token <64 hex>`; only the shell
+  may start it). The service keeps the last eight tokens in memory only.
+  In `hello` the client names its token by `token_id` and sends a nonce;
+  the companion answers with a nonce and an HMAC-SHA256 proof made with
+  the token, and the client proves itself with the new method `auth`. So
+  an app that listens on `localabstract:axross-companion` while the
+  service is not running gets no message, query or backup from axross.
+- New error codes `unknown_token` (the service was not given that token)
+  and `auth_failed` (a wrong proof); both close the session. Every method
+  but `hello` and `auth` before a successful `auth` is
+  `handshake_required`. The 10 s handshake time-out covers both.
+- `sms.send` takes an optional `client_ref`. A send whose `client_ref` was
+  accepted within the hour is not sent again: the answer is the first
+  send's result with `"duplicate": true`; it does not count against the
+  rate limits and its events are not sent again. Results say
+  `"duplicate": false` otherwise.
+- `sms.status` takes `{"client_ref": ...}` instead of `{"send_id": ...}`;
+  its result names the `client_ref`.
+- `MainActivity --ez listen true --es token <64 hex>` hands the token to the
+  service, for phones where the shell may not start it.
+- The fixtures (protocol/) are of version 2: every session starts with
+  `hello` and `auth` and gives the phone's token; new sessions
+  `auth_fails`, `unknown_token`, `before_auth`, `send_duplicate`. The
+  schema is `protocol/schema/protocol-v2.schema.json`. The reference client
+  takes `--token`; the smoke test starts the service with a token.
+
+Still not in it: downloading MMS while the companion is the default SMS app
+(an MMS that arrives then is not received; see docs/ARCHITECTURE.md).
+
 ## 0.1.0 (2026-11-26)
 
 The first version: axross's companion on the phone, over ADB.

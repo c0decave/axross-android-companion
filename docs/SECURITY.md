@@ -17,14 +17,27 @@ each is enforced.
   (`PeerPolicy`, unit-tested). Any other uid - every app on the phone - is
   closed at once and logged as "refused a connection from uid N", without
   data. A failing credentials check refuses too.
-- At most 4 sessions; the handshake must come within 10 s.
+- **The client checks the companion** (protocol 2). While the service is
+  not running, any app could listen on the abstract name itself. axross
+  therefore starts the service with a token (`--es token`, 32 random
+  bytes); only the shell can give one, as the service is guarded by DUMP.
+  In `hello` the companion proves that it holds the token (HMAC-SHA256
+  over the client's and its own nonce); axross sends nothing else before
+  it has checked that proof, and proves itself with `auth` (a wrong proof
+  closes the session). The tokens are kept in memory only (at most 8, gone
+  when the service stops), never logged, compared in constant time
+  (`Tokens`, unit-tested). MainActivity, the launcher's and so reachable
+  by any app, also hands a token to the service: an app can push tokens
+  out that way (axross then gives its own again), but not read or use one.
+- At most 4 sessions; the handshake (`hello` and `auth`) must be done
+  within 10 s.
 
 ## What is exported
 
 | Component | Exported | Guarded by | Why |
 |---|---|---|---|
 | MainActivity | yes | - | the launcher |
-| CompanionService | yes | `android.permission.DUMP` | started by the shell (`am start-foreground-service`); apps do not hold DUMP |
+| CompanionService | yes | `android.permission.DUMP` | started by the shell (`am start-foreground-service --es token ...`); apps do not hold DUMP |
 | SmsDeliverReceiver | yes | `BROADCAST_SMS` | required of a default SMS app; only the system sends it |
 | MmsDeliverReceiver | yes | `BROADCAST_WAP_PUSH` | the same |
 | RespondService | yes | `SEND_RESPOND_VIA_MESSAGE` | the same; drops every request |
@@ -37,7 +50,7 @@ sender's permission, and only nudges a re-read of the store.
 
 ## Sending
 
-- Only `sms.send` of a connected, handshaken session sends. No intent, no
+- Only `sms.send` of a connected, authenticated session sends. No intent, no
   activity, no service sends anything for another app (ComposeActivity and
   RespondService exist because Android requires them of an SMS app; they
   send nothing).
@@ -46,7 +59,9 @@ sender's permission, and only nudges a re-read of the store.
   no duplicates; text 1..5000 UTF-16 units, no NUL, no unpaired surrogate,
   at most 30 parts; `sub_id` an active subscription.
 - Rate limit, all sessions together, counted per recipient: 20 in any 60 s,
-  100 in any hour (`RateLimiter`, unit-tested). Android's own limit (about
+  100 in any hour (`RateLimiter`, unit-tested).
+- A send asked for again with a `client_ref` accepted within the hour is
+  answered with the first send's result and not sent again (nor counted). Android's own limit (about
   30 SMS in 30 minutes) asks the phone's user beyond that.
 - Writes to the message store (delete, mark read, restore) only as the
   default SMS app, which only the user can make it; a restore also asks the
@@ -65,11 +80,12 @@ itself returned).
 ## Logs and data
 
 - The log (tag `axross-companion`) holds fixed texts, method names, counts,
-  error codes and uids - never message text, numbers, names or anything read
-  from a request (`L`). Error messages sent to the client do not carry them
+  error codes and uids - never message text, numbers, names, tokens,
+  nonces, proofs, client_refs or anything else read from a request (`L`). Error messages sent to the client do not carry them
   either; an unexpected exception is answered "internal" without its
-  message. The smoke test checks the app's log lines for the number and the
-  text it sent.
+  message. The smoke test checks the app's log lines for the number, the
+  text it sent and its tokens.
 - The app keeps no data of its own (no files, no database, no backup:
   `allowBackup="false"`, data extraction rules exclude everything). Send
-  results are kept in memory for an hour.
+  results (with their client_ref) are kept in memory for an hour, the
+  tokens while the service runs.

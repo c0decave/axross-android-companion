@@ -38,14 +38,20 @@ downloading MMS while the companion is the default SMS app, editing contacts.
 ## Install and connect (what axross does)
 
 ```sh
-adb install -r axross-android-companion-0.1.0.apk
+adb install -r axross-android-companion-0.1.1.apk
 for p in READ_SMS SEND_SMS RECEIVE_SMS READ_CONTACTS READ_PHONE_STATE POST_NOTIFICATIONS; do
   adb shell pm grant io.github.c0decave.axross.companion android.permission.$p
 done
-adb shell am start-foreground-service -n io.github.c0decave.axross.companion/.CompanionService
+TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+adb shell am start-foreground-service -n io.github.c0decave.axross.companion/.CompanionService --es token $TOKEN
 adb forward tcp:38999 localabstract:axross-companion
-python3 -I scripts/ci/companion_client.py --port 38999 call threads.list '{"limit": 5}'
+python3 -I scripts/ci/companion_client.py --port 38999 --token $TOKEN call threads.list '{"limit": 5}'
 ```
+
+The token (32 random bytes, new for each start of axross) is how the
+client knows that it talks to the companion and not to another app on the
+socket's name: the companion proves in the handshake that it was given it
+(docs/PROTOCOL.md, section 4).
 
 The phone shows "axross is connected" while a client is attached; the
 service stops by itself five minutes after the last one left. Release
@@ -78,7 +84,8 @@ Becoming the default SMS app is never done silently: the restore screen
 asks Android, which asks the user; afterwards a notification asks the user
 to make their own messaging app the default again (Android does not let an
 app give the role back). While the companion is the default it stores
-incoming SMS but cannot download MMS - keep that time short.
+incoming SMS, but MMS that arrive meanwhile are not received (the carrier's
+notification reaches only the default app) - keep that time short.
 
 ## Security in short
 
@@ -158,11 +165,14 @@ attests the provenance and makes a **draft** release with the APK and
    merged manifest's rules and the APK's permissions (`aapt2 dump
    permissions`: no INTERNET).
 3. **smoke** - the APK in an emulator (`scripts/smoke_test.sh`): `pm grant`,
-   `am start-foreground-service`, `adb forward`, the reference client:
-   hello, status, SIMs, contacts, threads, the refusals, a second session
-   before hello, a broken frame, an SMS to the emulator's own number and its
-   `sms.sent`; then the process alive, no crash, and no text or number in
-   the app's log. Android 14 must pass; Android 8.0 is run and reported.
+   `am start-foreground-service --es token`, `adb forward`, the reference
+   client: the handshake (hello and auth), status, SIMs, contacts, threads,
+   the refusals, other sessions refused (before hello, a version-1 hello,
+   an unknown token, a wrong proof, before auth, a broken frame), an SMS to
+   the emulator's own number asked for twice with one `client_ref` (sent
+   once) and its `sms.sent`, eight more tokens pushing the first out; then
+   the process alive, no crash, and no text, number or token in the app's
+   log. Android 14 must pass; Android 8.0 is run and reported.
 
 Gradle's own dependencies (the Android Gradle Plugin's tree from Google's
 Maven repository, JUnit from Maven Central) are verified by SHA-256
