@@ -7,7 +7,7 @@ do over ADB: **read** SMS, MMS and contacts reliably, **send** SMS, and
 report new messages as they arrive. axross's Messages window talks to it
 through `adb forward` - nothing else can.
 
-**Status: 0.1.2, a pre-release** (protocol 2, revision 1). CI builds it, tests it on the JVM and
+**Status: 0.1.3, a pre-release** (protocol 2, revision 2). CI builds it, tests it on the JVM and
 runs it in emulators (Android 14 and 8.0); it has not yet run on a real
 phone (see [What is verified](#what-is-verified)).
 
@@ -38,7 +38,7 @@ downloading MMS while the companion is the default SMS app, editing contacts.
 ## Install and connect (what axross does)
 
 ```sh
-adb install -r axross-android-companion-0.1.2.apk
+adb install -r axross-android-companion-0.1.3.apk
 for p in READ_SMS SEND_SMS RECEIVE_SMS READ_CONTACTS READ_PHONE_STATE POST_NOTIFICATIONS; do
   adb shell pm grant io.github.c0decave.axross.companion android.permission.$p
 done

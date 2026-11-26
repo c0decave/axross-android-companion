@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.1.3 (2026-11-26)
+
+Protocol 2, revision 2: additions that a client of revision 1 (companion
+0.1.2's) can ignore; `protocol` stays 2. From release review 3 of axross
+0.15.186's Messages (N3-M3): `not_found` by `client_ref` was believed by
+the computer's clock while the companion dropped sends by the phone's, so a
+phone clock set forward made a sent message "not sent", and Send Again sent
+it twice. Now the companion says what it dropped, and no clock is needed.
+
+- `hello`: `"revision": 2`; `sends` is `{"store", "keep_ms", "next_id",
+  "dropped_through"}`: `next_id` the id the next accepted send gets (read
+  under the lock send ids are given out under, so every send accepted
+  after the `hello` has an id at least that), `dropped_through` the highest
+  send id the store ever dropped - by age, by the 5000-send cap, for any
+  reason - or 0. The new capability `sms.dropped`.
+- `status` has `sends` too, the same object, read at the time of the answer.
+- `sms.status` by `client_ref`: `not_found` carries `"data": {"store",
+  "dropped_through"}`. The client records `F` = `hello`'s `sends.next_id`
+  for the session it sends over; `not_found` means "never accepted, not
+  sent" exactly when the store is the same and `dropped_through < F`
+  (docs/PROTOCOL.md, `sms.status`). `pending` is unchanged.
+- The send store keeps `dropped_through` in `sends.json`: the running
+  maximum of dropped ids, never lowered, reset only with a new store id. It
+  is written before or together with the removal it counts (the cap's drop
+  in the same write as the new send; an expiry's file is written first and
+  the sends removed from memory only when that worked; a failed write
+  keeps them, found, until a write works), so neither an answer nor a
+  crash shows a send gone that it does not count. A store of 0.1.2 counts
+  the highest id below its counter that it does not hold. Send ids no
+  longer wrap (past 2^53 - 1, `sms.send` answers `internal`).
+- Fixtures: every hello of revision 2; `not_found` by `client_ref` with its
+  data; `status` with `sends`; new sessions `status_dropped_clock_jump`
+  (the session's send dropped after a jump of the phone's clock:
+  `dropped_through` >= F) and `status_dropped_before_session` (a refused
+  send: `dropped_through` < F); a new step `phone_clock` and
+  `sends.dropped_through` (protocol/README.md); the schema's `Sends`,
+  `SendNotFound` and `x-error-data`. The reference client and the smoke
+  test check `next_id`, `dropped_through` and the proof of "never
+  accepted", also after the restart.
+
 ## 0.1.2 (2026-11-26)
 
 Protocol 2, revision 1: additions that a client of revision 0 (axross
