@@ -1,0 +1,147 @@
+# Every push: the checks that need no build (the pins, the protocol's
+# schema and fixtures against each other and docs/PROTOCOL.md, the
+# manifest's security rules), then the JVM unit tests and the debug APK,
+# then a smoke test of that APK in an emulator: installed, permissions
+# granted with pm grant, the service started over ADB, the reference client
+# through adb forward - hello, contacts, threads, refusals, and an SMS to
+# the emulator's own number with its sms.sent event.
+#
+# Third-party actions are pinned by commit, as in axross and
+# axross-amp-android (scripts/check_pins.py fails the first job on one that
+# is not). The Android SDK comes from the runner's image, the JDK from
+# setup-java, Gradle from Gradle's action.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+  # (the release runs it first: nothing is built for a release before the
+  # checks, the tests and the smoke test pass)
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The pins (actions by commit, exact Gradle versions, no library in the app)
+        run: python3 -I scripts/check_pins.py
+      - name: The protocol (schema, fixtures and docs/PROTOCOL.md agree)
+        run: python3 -I scripts/ci/check_protocol.py
+      - name: The manifest's rules (permissions, exported components)
+        run: python3 -I scripts/ci/check_manifest.py
+
+  # The JVM unit tests (framing, JSON, the handshake, request checks,
+  # recipients, the rate limit, the peer-uid rule, the cursor order, the
+  # shared fixtures), the debug APK (installs as ...companion.debug), lint.
+  build:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The toolchain (JDK 17, Gradle)
+        uses: ./.github/actions/android-toolchain
+      - name: Unit tests
+        run: gradle --no-daemon -p android testDebugUnitTest
+      - name: Debug APK
+        run: gradle --no-daemon -p android assembleDebug
+      - name: Lint (reported, not fatal yet)
+        run: gradle --no-daemon -p android lintDebug
+        continue-on-error: true
+      - name: What is in it, and the merged manifest's rules
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          ls -l "$APK"
+          unzip -l "$APK"
+          sha256sum "$APK"
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$AAPT2" dump permissions "$APK" | tee permissions.txt
+          if grep -q -E 'INTERNET|NETWORK_STATE' permissions.txt; then
+            echo "::error::the APK asks for network access"; exit 1
+          fi
+          MERGED=$(find android/app/build/intermediates -path '*debug*' -name AndroidManifest.xml -path '*merged_manifest*' | head -1)
+          test -n "$MERGED" || { echo "::error::no merged manifest found"; exit 1; }
+          python3 -I scripts/ci/check_manifest.py "$MERGED"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: axross-android-companion-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: reports
+          path: |
+            android/app/build/reports/
+            android/app/build/test-results/
+          if-no-files-found: ignore
+      # Gradle's own dependencies (the Android Gradle Plugin and what it
+      # pulls in, JUnit) are not yet verified by checksum: until
+      # android/gradle/verification-metadata.xml is reviewed and committed,
+      # each run offers the file it would be (docs/ARCHITECTURE.md, "Supply
+      # chain").
+      - name: Gradle's dependency checksums, to review and commit (until they are)
+        if: hashFiles('android/gradle/verification-metadata.xml') == ''
+        run: gradle --no-daemon -p android --write-verification-metadata sha256 assembleDebug testDebugUnitTest
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: hashFiles('android/gradle/verification-metadata.xml') != ''
+        with:
+          name: gradle-verification-metadata
+          path: android/gradle/verification-metadata.xml
+          if-no-files-found: ignore
+
+  # The APK in an emulator (scripts/smoke_test.sh). Android 14 must pass;
+  # Android 8.0 - the oldest the app installs on - is run and reported but
+  # does not fail the run yet.
+  smoke:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 34
+            required: true
+          - api: 26
+            required: false
+    continue-on-error: ${{ !matrix.required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: axross-android-companion-debug-apk
+          path: apk
+      - name: KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Smoke test in the emulator (Android API ${{ matrix.api }}, x86_64)
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          target: default
+          force-avd-creation: true
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash scripts/smoke_test.sh apk/app-debug.apk smoke-output
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-api-${{ matrix.api }}
+          path: smoke-output
+          if-no-files-found: ignore

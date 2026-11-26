@@ -1,0 +1,1368 @@
+{
+  "description": "Requests and what the companion's check of their parameters says (docs/PROTOCOL.md, section 7): 'ok', or the error code (and, for bad_request, the field). These are the checks only: an 'ok' request can still fail on the phone (permission_denied, not_found, ...). Unknown parameters are ignored.",
+  "cases": [
+    {
+      "name": "hello",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          1
+        ],
+        "client": "axross",
+        "client_version": "0.15.183"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "hello with several versions",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          3,
+          2,
+          1
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "hello without protocols",
+      "method": "hello",
+      "params": {},
+      "expect": "bad_request",
+      "field": "protocols"
+    },
+    {
+      "name": "hello with an empty list",
+      "method": "hello",
+      "params": {
+        "protocols": []
+      },
+      "expect": "bad_request",
+      "field": "protocols"
+    },
+    {
+      "name": "hello with a string version",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          "1"
+        ]
+      },
+      "expect": "bad_request",
+      "field": "protocols"
+    },
+    {
+      "name": "hello with a long client name",
+      "method": "hello",
+      "params": {
+        "protocols": [
+          1
+        ],
+        "client": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "expect": "bad_request",
+      "field": "client"
+    },
+    {
+      "name": "ping",
+      "method": "ping",
+      "params": {},
+      "expect": "ok"
+    },
+    {
+      "name": "status",
+      "method": "status",
+      "params": {},
+      "expect": "ok"
+    },
+    {
+      "name": "subscriptions",
+      "method": "subscriptions.list",
+      "params": {},
+      "expect": "ok"
+    },
+    {
+      "name": "contacts, defaults",
+      "method": "contacts.list",
+      "params": {},
+      "expect": "ok"
+    },
+    {
+      "name": "contacts, a page",
+      "method": "contacts.list",
+      "params": {
+        "offset": 1000,
+        "limit": 1000
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "contacts, limit 0",
+      "method": "contacts.list",
+      "params": {
+        "limit": 0
+      },
+      "expect": "bad_request",
+      "field": "limit"
+    },
+    {
+      "name": "contacts, limit 1001",
+      "method": "contacts.list",
+      "params": {
+        "limit": 1001
+      },
+      "expect": "bad_request",
+      "field": "limit"
+    },
+    {
+      "name": "contacts, negative offset",
+      "method": "contacts.list",
+      "params": {
+        "offset": -1
+      },
+      "expect": "bad_request",
+      "field": "offset"
+    },
+    {
+      "name": "contacts, fractional limit",
+      "method": "contacts.list",
+      "params": {
+        "limit": 10.5
+      },
+      "expect": "bad_request",
+      "field": "limit"
+    },
+    {
+      "name": "contact photo",
+      "method": "contacts.photo",
+      "params": {
+        "contact_id": 42
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "contact photo, full size",
+      "method": "contacts.photo",
+      "params": {
+        "contact_id": 42,
+        "size": "full"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "contact photo, id 0",
+      "method": "contacts.photo",
+      "params": {
+        "contact_id": 0
+      },
+      "expect": "bad_request",
+      "field": "contact_id"
+    },
+    {
+      "name": "contact photo, bad size",
+      "method": "contacts.photo",
+      "params": {
+        "contact_id": 42,
+        "size": "huge"
+      },
+      "expect": "bad_request",
+      "field": "size"
+    },
+    {
+      "name": "contact photo, id as string",
+      "method": "contacts.photo",
+      "params": {
+        "contact_id": "42"
+      },
+      "expect": "bad_request",
+      "field": "contact_id"
+    },
+    {
+      "name": "threads",
+      "method": "threads.list",
+      "params": {
+        "limit": 50
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "messages",
+      "method": "messages.list",
+      "params": {
+        "thread_id": 5
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "messages after a cursor",
+      "method": "messages.list",
+      "params": {
+        "thread_id": 5,
+        "limit": 500,
+        "before": {
+          "date": 1764150000000,
+          "kind": "sms",
+          "id": 123
+        }
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "64-bit ids",
+      "method": "messages.list",
+      "params": {
+        "thread_id": 9223372036854775807
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "messages without a thread",
+      "method": "messages.list",
+      "params": {},
+      "expect": "bad_request",
+      "field": "thread_id"
+    },
+    {
+      "name": "messages, limit 501",
+      "method": "messages.list",
+      "params": {
+        "thread_id": 5,
+        "limit": 501
+      },
+      "expect": "bad_request",
+      "field": "limit"
+    },
+    {
+      "name": "messages, bad cursor kind",
+      "method": "messages.list",
+      "params": {
+        "thread_id": 5,
+        "before": {
+          "date": 1,
+          "kind": "rcs",
+          "id": 1
+        }
+      },
+      "expect": "bad_request",
+      "field": "before"
+    },
+    {
+      "name": "messages, cursor not an object",
+      "method": "messages.list",
+      "params": {
+        "thread_id": 5,
+        "before": "abc"
+      },
+      "expect": "bad_request",
+      "field": "before"
+    },
+    {
+      "name": "search",
+      "method": "messages.search",
+      "params": {
+        "query": "dinner"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "search in a thread",
+      "method": "messages.search",
+      "params": {
+        "query": "50%_off",
+        "thread_id": 5,
+        "limit": 200
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "search, empty query",
+      "method": "messages.search",
+      "params": {
+        "query": ""
+      },
+      "expect": "bad_request",
+      "field": "query"
+    },
+    {
+      "name": "search, long query",
+      "method": "messages.search",
+      "params": {
+        "query": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      },
+      "expect": "bad_request",
+      "field": "query"
+    },
+    {
+      "name": "search, limit 201",
+      "method": "messages.search",
+      "params": {
+        "query": "a",
+        "limit": 201
+      },
+      "expect": "bad_request",
+      "field": "limit"
+    },
+    {
+      "name": "get an SMS",
+      "method": "message.get",
+      "params": {
+        "kind": "sms",
+        "id": 123
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "get without kind",
+      "method": "message.get",
+      "params": {
+        "id": 123
+      },
+      "expect": "bad_request",
+      "field": "kind"
+    },
+    {
+      "name": "mark an SMS read",
+      "method": "message.mark_read",
+      "params": {
+        "kind": "sms",
+        "id": 123
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "mark a thread unread",
+      "method": "message.mark_read",
+      "params": {
+        "thread_id": 5,
+        "read": false
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "mark read, both a message and a thread",
+      "method": "message.mark_read",
+      "params": {
+        "kind": "sms",
+        "id": 1,
+        "thread_id": 5
+      },
+      "expect": "bad_request"
+    },
+    {
+      "name": "mark read, nothing",
+      "method": "message.mark_read",
+      "params": {},
+      "expect": "bad_request"
+    },
+    {
+      "name": "delete an MMS",
+      "method": "message.delete",
+      "params": {
+        "kind": "mms",
+        "id": 77
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "delete a thread",
+      "method": "message.delete",
+      "params": {
+        "thread_id": 5
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send to one",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send with a SIM and no report",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+1 (555) 521-5554",
+          "0049.170/1234567"
+        ],
+        "text": "Hi",
+        "sub_id": 2,
+        "delivery_report": false
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send to a short code",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "7726"
+        ],
+        "text": "STOP"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send to ten",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15550000000",
+          "+15550000001",
+          "+15550000002",
+          "+15550000003",
+          "+15550000004",
+          "+15550000005",
+          "+15550000006",
+          "+15550000007",
+          "+15550000008",
+          "+15550000009"
+        ],
+        "text": "Hi"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send 5000 characters",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send an emoji (a surrogate pair)",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "\ud83d\ude00"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send, sub_id -1",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "sub_id": -1
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "send to eleven",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15550000000",
+          "+15550000001",
+          "+15550000002",
+          "+15550000003",
+          "+15550000004",
+          "+15550000005",
+          "+15550000006",
+          "+15550000007",
+          "+15550000008",
+          "+15550000009",
+          "+15550000010"
+        ],
+        "text": "Hi"
+      },
+      "expect": "too_many_recipients"
+    },
+    {
+      "name": "send to nobody",
+      "method": "sms.send",
+      "params": {
+        "recipients": [],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send without recipients",
+      "method": "sms.send",
+      "params": {
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send to a name",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "Alice"
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send to a USSD code",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "*100#"
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send to two digits",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "12"
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send to 21 digits",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "111111111111111111111"
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send, plus in the middle",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "155+55215554"
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send, the same number twice",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554",
+          "+1 555 521 5554"
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send, a number not a string",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          15555215554
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send, a recipient of 65 characters",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "                                                      15555215554"
+        ],
+        "text": "Hi"
+      },
+      "expect": "bad_request",
+      "field": "recipients"
+    },
+    {
+      "name": "send an empty text",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": ""
+      },
+      "expect": "bad_request",
+      "field": "text"
+    },
+    {
+      "name": "send without text",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ]
+      },
+      "expect": "bad_request",
+      "field": "text"
+    },
+    {
+      "name": "send 5001 characters",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expect": "too_large"
+    },
+    {
+      "name": "send a NUL",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "a\u0000b"
+      },
+      "expect": "bad_request",
+      "field": "text"
+    },
+    {
+      "name": "send an unpaired surrogate",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "a\ud800b"
+      },
+      "expect": "bad_request",
+      "field": "text"
+    },
+    {
+      "name": "send, sub_id -2",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "sub_id": -2
+      },
+      "expect": "bad_request",
+      "field": "sub_id"
+    },
+    {
+      "name": "send, delivery_report a string",
+      "method": "sms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ],
+        "text": "Hi",
+        "delivery_report": "yes"
+      },
+      "expect": "bad_request",
+      "field": "delivery_report"
+    },
+    {
+      "name": "send status",
+      "method": "sms.status",
+      "params": {
+        "send_id": 3
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "MMS parts",
+      "method": "mms.parts",
+      "params": {
+        "id": 77
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "MMS part data",
+      "method": "mms.part_data",
+      "params": {
+        "part_id": 301
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "MMS part data, negative id",
+      "method": "mms.part_data",
+      "params": {
+        "part_id": -1
+      },
+      "expect": "bad_request",
+      "field": "part_id"
+    },
+    {
+      "name": "MMS send (version 1 has none)",
+      "method": "mms.send",
+      "params": {
+        "recipients": [
+          "+15555215554"
+        ]
+      },
+      "expect": "not_implemented"
+    },
+    {
+      "name": "subscribe",
+      "method": "subscribe",
+      "params": {
+        "events": [
+          "message.received",
+          "messages.changed"
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "subscribe to nothing",
+      "method": "subscribe",
+      "params": {
+        "events": []
+      },
+      "expect": "bad_request",
+      "field": "events"
+    },
+    {
+      "name": "subscribe to an unknown event",
+      "method": "subscribe",
+      "params": {
+        "events": [
+          "sms.sent"
+        ]
+      },
+      "expect": "bad_request",
+      "field": "events"
+    },
+    {
+      "name": "unsubscribe from all",
+      "method": "unsubscribe",
+      "params": {},
+      "expect": "ok"
+    },
+    {
+      "name": "export everything",
+      "method": "backup.export",
+      "params": {},
+      "expect": "ok"
+    },
+    {
+      "name": "export one thread without MMS data",
+      "method": "backup.export",
+      "params": {
+        "thread_id": 5,
+        "include_mms_data": false
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "cancel an export",
+      "method": "backup.cancel",
+      "params": {
+        "export_id": 1
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "restore begin",
+      "method": "backup.restore.begin",
+      "params": {
+        "sms_count": 1200,
+        "source": "backup-2026-11-26.jsonl"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "restore begin, no count",
+      "method": "backup.restore.begin",
+      "params": {},
+      "expect": "bad_request",
+      "field": "sms_count"
+    },
+    {
+      "name": "restore begin, too many",
+      "method": "backup.restore.begin",
+      "params": {
+        "sms_count": 1000001
+      },
+      "expect": "bad_request",
+      "field": "sms_count"
+    },
+    {
+      "name": "restore chunk",
+      "method": "backup.restore.chunk",
+      "params": {
+        "restore_id": 1,
+        "items": [
+          {
+            "kind": "sms",
+            "address": "+15555215554",
+            "date": 1764150000000,
+            "box": "inbox",
+            "body": "Hi"
+          }
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "restore chunk, no items",
+      "method": "backup.restore.chunk",
+      "params": {
+        "restore_id": 1,
+        "items": []
+      },
+      "expect": "bad_request",
+      "field": "items"
+    },
+    {
+      "name": "restore chunk, 501 items",
+      "method": "backup.restore.chunk",
+      "params": {
+        "restore_id": 1,
+        "items": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "expect": "bad_request",
+      "field": "items"
+    },
+    {
+      "name": "restore end",
+      "method": "backup.restore.end",
+      "params": {
+        "restore_id": 1
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "an unknown method",
+      "method": "contacts.edit",
+      "params": {},
+      "expect": "unknown_method"
+    }
+  ]
+}

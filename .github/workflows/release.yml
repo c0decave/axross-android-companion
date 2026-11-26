@@ -1,0 +1,165 @@
+# A release: on a tag vX.Y.Z the release APK is built, signed with the key
+# from the repository's secrets, its signature verified (against the
+# expected certificate, when the variable names one), its SHA-256 sum
+# written and its provenance attested, and a GitHub release made as a
+# draft with the CHANGELOG's notes for that version. Nothing is built
+# before the checks, the tests and the emulator's smoke test (ci.yml) pass.
+#
+# The key: four secrets of the environment "release" (README, "Signing").
+# The workflow never creates a key, and without the secrets it fails rather
+# than publish an APK signed with anything else. Third-party actions are
+# pinned by commit.
+
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The tag, android/gradle.properties and the CHANGELOG name one version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          APP=$(sed -n 's/^companion\.version=//p' android/gradle.properties | head -1)
+          if [ "$VERSION" != "$APP" ]; then
+            echo "::error::tag $TAG but android/gradle.properties says $APP"; exit 1
+          fi
+          grep -q "^## $VERSION " CHANGELOG.md || { echo "::error::no '## $VERSION' in CHANGELOG.md"; exit 1; }
+          if grep -q "^## $VERSION (unreleased)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md still calls $VERSION unreleased"; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  # The checks, the tests, the debug APK and its smoke test (ci.yml).
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  apk:
+    needs: [check, ci]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # (the signing key's secrets belong to this environment: only this job
+    # is given them, and the environment can ask for a reviewer's approval)
+    environment: release
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The signing key is there (no release without it)
+        env:
+          COMPANION_KEYSTORE_BASE64: ${{ secrets.COMPANION_KEYSTORE_BASE64 }}
+          COMPANION_KEYSTORE_PASSWORD: ${{ secrets.COMPANION_KEYSTORE_PASSWORD }}
+          COMPANION_KEY_ALIAS: ${{ secrets.COMPANION_KEY_ALIAS }}
+          COMPANION_KEY_PASSWORD: ${{ secrets.COMPANION_KEY_PASSWORD }}
+        run: |
+          missing=""
+          for name in COMPANION_KEYSTORE_BASE64 COMPANION_KEYSTORE_PASSWORD COMPANION_KEY_ALIAS COMPANION_KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::missing secrets of the environment 'release':$missing (README, Signing)"; exit 1
+          fi
+          umask 077
+          printf '%s' "$COMPANION_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          test -s "$RUNNER_TEMP/release.keystore"
+      - name: The toolchain (JDK 17, Gradle)
+        uses: ./.github/actions/android-toolchain
+      - name: Release APK, signed
+        env:
+          COMPANION_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          COMPANION_KEYSTORE_PASSWORD: ${{ secrets.COMPANION_KEYSTORE_PASSWORD }}
+          COMPANION_KEY_ALIAS: ${{ secrets.COMPANION_KEY_ALIAS }}
+          COMPANION_KEY_PASSWORD: ${{ secrets.COMPANION_KEY_PASSWORD }}
+        run: gradle --no-daemon -p android assembleRelease
+      - name: The key leaves the runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+      - name: The APK is signed - by the expected certificate, where one is named
+        env:
+          # (a repository variable, not a secret: the certificate's SHA-256
+          # as `apksigner verify --print-certs` prints it; empty: any
+          # certificate passes and its digest is only shown)
+          EXPECTED: ${{ vars.COMPANION_CERT_SHA256 }}
+        run: |
+          mkdir -p release
+          BUILT=android/app/build/outputs/apk/release/app-release.apk
+          test -f "$BUILT" || { echo "::error::no signed APK (app-release.apk) was built"; ls android/app/build/outputs/apk/release; exit 1; }
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$BUILT" | tee verify.txt
+          GOT=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verify.txt)
+          test -n "$GOT"
+          echo "signed by the certificate $GOT"
+          if [ -n "$EXPECTED" ]; then
+            WANT=$(printf '%s' "$EXPECTED" | tr -d ': ' | tr 'A-F' 'a-f')
+            [ "$GOT" = "$WANT" ] || { echo "::error::signed by $GOT, expected $WANT"; exit 1; }
+          else
+            echo "::warning::no COMPANION_CERT_SHA256 variable: the certificate is not checked against an expected one"
+          fi
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          if "$AAPT2" dump permissions "$BUILT" | grep -q -E 'INTERNET|NETWORK_STATE'; then
+            echo "::error::the APK asks for network access"; exit 1
+          fi
+          cp "$BUILT" "release/axross-android-companion-$VERSION.apk"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-apk
+          path: release/*.apk
+          if-no-files-found: error
+
+  publish:
+    needs: [check, apk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-apk
+          path: release
+      - name: The files and their SHA-256 sums
+        run: |
+          (cd release && sha256sum -- * > SHA256SUMS)
+          cat release/SHA256SUMS
+      - name: Provenance (SLSA, by GitHub's attestations) for every file
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: release/SHA256SUMS
+      - name: The notes, from the CHANGELOG's section for this version
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## " v " " { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md
+      # A draft: looked at and published by hand.
+      - name: The GitHub release, as a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "axross-android-companion $VERSION" --notes-file notes.md release/*

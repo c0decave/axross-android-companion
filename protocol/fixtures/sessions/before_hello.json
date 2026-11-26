@@ -1,0 +1,81 @@
+{
+  "name": "before hello",
+  "description": "Any request before hello is refused and the companion closes.",
+  "phone": {
+    "hello": {
+      "app": "axross-android-companion",
+      "app_version": "0.1.0",
+      "app_version_code": 100,
+      "package": "io.github.c0decave.axross.companion",
+      "android": {
+        "sdk_int": 34,
+        "release": "14",
+        "manufacturer": "Google",
+        "model": "sdk_gphone64_x86_64"
+      },
+      "capabilities": [
+        "contacts",
+        "contacts.photo",
+        "threads",
+        "messages",
+        "messages.search",
+        "message.mark_read",
+        "message.delete",
+        "sms.send",
+        "sms.status",
+        "mms.parts",
+        "mms.part_data",
+        "subscribe",
+        "subscriptions",
+        "backup.export",
+        "backup.restore"
+      ],
+      "limits": {
+        "max_frame": 16777216,
+        "max_request_json": 4194304,
+        "max_blob_in": 8388608,
+        "max_blobs_pending": 33554432,
+        "max_blob_out": 67108864,
+        "max_in_flight": 8,
+        "max_recipients": 10,
+        "max_text_chars": 5000,
+        "max_parts": 30,
+        "sends_per_minute": 20,
+        "sends_per_hour": 100,
+        "max_page": 500
+      },
+      "default_sms_app": false,
+      "permissions": {
+        "READ_SMS": true,
+        "SEND_SMS": true,
+        "RECEIVE_SMS": true,
+        "READ_CONTACTS": true,
+        "READ_PHONE_STATE": true,
+        "POST_NOTIFICATIONS": true
+      }
+    },
+    "answers": {}
+  },
+  "steps": [
+    {
+      "client": {
+        "id": 1,
+        "method": "threads.list",
+        "params": {}
+      }
+    },
+    {
+      "companion": {
+        "id": 1,
+        "ok": false,
+        "error": {
+          "code": "handshake_required",
+          "message": "*"
+        }
+      }
+    },
+    {
+      "companion_closes": true
+    }
+  ]
+}

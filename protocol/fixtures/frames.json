@@ -1,0 +1,138 @@
+{
+  "description": "Frames as bytes (docs/PROTOCOL.md, section 2). A case with 'kind' decodes to one frame: 'json' with that object, or 'blob' with that id, LAST flag and data. A case with 'error' must make the reader give up on the stream (the companion sends session.closing with reason protocol_error and closes). The largest valid length is 16777216 (0x01000000).",
+  "frames": [
+    {
+      "name": "hello request",
+      "hex": "00000063017b226964223a312c226d6574686f64223a2268656c6c6f222c22706172616d73223a7b2270726f746f636f6c73223a5b315d2c22636c69656e74223a226178726f7373222c22636c69656e745f76657273696f6e223a22302e31352e313833227d7d",
+      "kind": "json",
+      "json": {
+        "id": 1,
+        "method": "hello",
+        "params": {
+          "protocols": [
+            1
+          ],
+          "client": "axross",
+          "client_version": "0.15.183"
+        }
+      }
+    },
+    {
+      "name": "a response",
+      "hex": "00000033017b226964223a312c226f6b223a747275652c22726573756c74223a7b2274696d65223a313736343135303030303030307d7d",
+      "kind": "json",
+      "json": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "time": 1764150000000
+        }
+      }
+    },
+    {
+      "name": "an event",
+      "hex": "0000004d017b226576656e74223a22736d732e73656e74222c2264617461223a7b2273656e645f6964223a332c22696e646578223a302c2261646472657373223a222b3135353535323135353534227d7d",
+      "kind": "json",
+      "json": {
+        "event": "sms.sent",
+        "data": {
+          "send_id": 3,
+          "index": 0,
+          "address": "+15555215554"
+        }
+      }
+    },
+    {
+      "name": "UTF-8 text (umlaut and an emoji, written as UTF-8, not escaped)",
+      "hex": "0000005c017b226964223a322c226d6574686f64223a22736d732e73656e64222c22706172616d73223a7b22726563697069656e7473223a5b222b3135353535323135353534225d2c2274657874223a224772c3bcc39f6520f09f9880227d7d",
+      "kind": "json",
+      "json": {
+        "id": 2,
+        "method": "sms.send",
+        "params": {
+          "recipients": [
+            "+15555215554"
+          ],
+          "text": "Grüße 😀"
+        }
+      }
+    },
+    {
+      "name": "a blob in one chunk",
+      "hex": "00000010020000000101ffd8ffe000104a464946",
+      "kind": "blob",
+      "blob": 1,
+      "last": true,
+      "data_hex": "ffd8ffe000104a464946"
+    },
+    {
+      "name": "first chunk of a blob of two",
+      "hex": "00000009020000000200616263",
+      "kind": "blob",
+      "blob": 2,
+      "last": false,
+      "data_hex": "616263"
+    },
+    {
+      "name": "last chunk of a blob of two",
+      "hex": "000000080200000002016465",
+      "kind": "blob",
+      "blob": 2,
+      "last": true,
+      "data_hex": "6465"
+    },
+    {
+      "name": "an empty blob",
+      "hex": "00000006020000000301",
+      "kind": "blob",
+      "blob": 3,
+      "last": true,
+      "data_hex": ""
+    },
+    {
+      "name": "length 0",
+      "hex": "00000000",
+      "error": "protocol_error"
+    },
+    {
+      "name": "length above 16 MiB",
+      "hex": "0100000101",
+      "error": "protocol_error"
+    },
+    {
+      "name": "unknown kind 3",
+      "hex": "0000000203ff",
+      "error": "protocol_error"
+    },
+    {
+      "name": "unknown kind 0",
+      "hex": "0000000100",
+      "error": "protocol_error"
+    },
+    {
+      "name": "blob chunk shorter than its header",
+      "hex": "000000040200000001",
+      "error": "protocol_error"
+    },
+    {
+      "name": "blob id 0",
+      "hex": "00000006020000000001",
+      "error": "protocol_error"
+    },
+    {
+      "name": "blob with unknown flags",
+      "hex": "00000006020000000102",
+      "error": "protocol_error"
+    },
+    {
+      "name": "end of stream inside a frame",
+      "hex": "00000010017b22",
+      "error": "protocol_error"
+    },
+    {
+      "name": "end of stream inside the length",
+      "hex": "0000",
+      "error": "protocol_error"
+    }
+  ]
+}

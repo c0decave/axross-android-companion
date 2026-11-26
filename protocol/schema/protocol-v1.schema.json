@@ -1,0 +1,2268 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/c0decave/axross-android-companion/blob/main/protocol/schema/protocol-v1.schema.json",
+ "title": "axross companion protocol, version 1",
+ "description": "The JSON frames of docs/PROTOCOL.md. The root validates any JSON frame (a request, a response or an event); x-methods maps each method to its params and result, x-events each event to its data, x-error-codes lists the error codes. Unknown fields are allowed everywhere (they are ignored).",
+ "oneOf": [
+  {
+   "$ref": "#/$defs/Request"
+  },
+  {
+   "$ref": "#/$defs/Response"
+  },
+  {
+   "$ref": "#/$defs/Event"
+  }
+ ],
+ "x-protocol-version": 1,
+ "x-socket": "localabstract:axross-companion",
+ "x-methods": {
+  "hello": {
+   "params": {
+    "$ref": "#/$defs/hello.params"
+   },
+   "result": {
+    "$ref": "#/$defs/hello.result"
+   }
+  },
+  "ping": {
+   "params": {
+    "$ref": "#/$defs/ping.params"
+   },
+   "result": {
+    "$ref": "#/$defs/ping.result"
+   }
+  },
+  "status": {
+   "params": {
+    "$ref": "#/$defs/status.params"
+   },
+   "result": {
+    "$ref": "#/$defs/status.result"
+   }
+  },
+  "subscriptions.list": {
+   "params": {
+    "$ref": "#/$defs/subscriptions.list.params"
+   },
+   "result": {
+    "$ref": "#/$defs/subscriptions.list.result"
+   }
+  },
+  "contacts.list": {
+   "params": {
+    "$ref": "#/$defs/contacts.list.params"
+   },
+   "result": {
+    "$ref": "#/$defs/contacts.list.result"
+   }
+  },
+  "contacts.photo": {
+   "params": {
+    "$ref": "#/$defs/contacts.photo.params"
+   },
+   "result": {
+    "$ref": "#/$defs/contacts.photo.result"
+   }
+  },
+  "threads.list": {
+   "params": {
+    "$ref": "#/$defs/threads.list.params"
+   },
+   "result": {
+    "$ref": "#/$defs/threads.list.result"
+   }
+  },
+  "messages.list": {
+   "params": {
+    "$ref": "#/$defs/messages.list.params"
+   },
+   "result": {
+    "$ref": "#/$defs/messages.list.result"
+   }
+  },
+  "messages.search": {
+   "params": {
+    "$ref": "#/$defs/messages.search.params"
+   },
+   "result": {
+    "$ref": "#/$defs/messages.search.result"
+   }
+  },
+  "message.get": {
+   "params": {
+    "$ref": "#/$defs/message.get.params"
+   },
+   "result": {
+    "$ref": "#/$defs/message.get.result"
+   }
+  },
+  "message.mark_read": {
+   "params": {
+    "$ref": "#/$defs/message.mark_read.params"
+   },
+   "result": {
+    "$ref": "#/$defs/message.mark_read.result"
+   }
+  },
+  "message.delete": {
+   "params": {
+    "$ref": "#/$defs/message.delete.params"
+   },
+   "result": {
+    "$ref": "#/$defs/message.delete.result"
+   }
+  },
+  "sms.send": {
+   "params": {
+    "$ref": "#/$defs/sms.send.params"
+   },
+   "result": {
+    "$ref": "#/$defs/sms.send.result"
+   }
+  },
+  "sms.status": {
+   "params": {
+    "$ref": "#/$defs/sms.status.params"
+   },
+   "result": {
+    "$ref": "#/$defs/sms.status.result"
+   }
+  },
+  "mms.parts": {
+   "params": {
+    "$ref": "#/$defs/mms.parts.params"
+   },
+   "result": {
+    "$ref": "#/$defs/mms.parts.result"
+   }
+  },
+  "mms.part_data": {
+   "params": {
+    "$ref": "#/$defs/mms.part_data.params"
+   },
+   "result": {
+    "$ref": "#/$defs/mms.part_data.result"
+   }
+  },
+  "subscribe": {
+   "params": {
+    "$ref": "#/$defs/subscribe.params"
+   },
+   "result": {
+    "$ref": "#/$defs/subscribe.result"
+   }
+  },
+  "unsubscribe": {
+   "params": {
+    "$ref": "#/$defs/unsubscribe.params"
+   },
+   "result": {
+    "$ref": "#/$defs/unsubscribe.result"
+   }
+  },
+  "backup.export": {
+   "params": {
+    "$ref": "#/$defs/backup.export.params"
+   },
+   "result": {
+    "$ref": "#/$defs/backup.export.result"
+   }
+  },
+  "backup.cancel": {
+   "params": {
+    "$ref": "#/$defs/backup.cancel.params"
+   },
+   "result": {
+    "$ref": "#/$defs/backup.cancel.result"
+   }
+  },
+  "backup.restore.begin": {
+   "params": {
+    "$ref": "#/$defs/backup.restore.begin.params"
+   },
+   "result": {
+    "$ref": "#/$defs/backup.restore.begin.result"
+   }
+  },
+  "backup.restore.chunk": {
+   "params": {
+    "$ref": "#/$defs/backup.restore.chunk.params"
+   },
+   "result": {
+    "$ref": "#/$defs/backup.restore.chunk.result"
+   }
+  },
+  "backup.restore.end": {
+   "params": {
+    "$ref": "#/$defs/backup.restore.end.params"
+   },
+   "result": {
+    "$ref": "#/$defs/backup.restore.end.result"
+   }
+  }
+ },
+ "x-events": {
+  "message.received": {
+   "$ref": "#/$defs/event.message.received"
+  },
+  "messages.changed": {
+   "$ref": "#/$defs/event.messages.changed"
+  },
+  "sms.sent": {
+   "$ref": "#/$defs/event.sms.sent"
+  },
+  "sms.failed": {
+   "$ref": "#/$defs/event.sms.failed"
+  },
+  "sms.delivered": {
+   "$ref": "#/$defs/event.sms.delivered"
+  },
+  "backup.items": {
+   "$ref": "#/$defs/event.backup.items"
+  },
+  "backup.done": {
+   "$ref": "#/$defs/event.backup.done"
+  },
+  "backup.failed": {
+   "$ref": "#/$defs/event.backup.failed"
+  },
+  "backup.restore.state": {
+   "$ref": "#/$defs/event.backup.restore.state"
+  },
+  "session.closing": {
+   "$ref": "#/$defs/event.session.closing"
+  }
+ },
+ "x-error-codes": [
+  "bad_request",
+  "unknown_method",
+  "handshake_required",
+  "unsupported_protocol",
+  "not_implemented",
+  "permission_denied",
+  "not_default_sms_app",
+  "not_found",
+  "too_many_recipients",
+  "too_large",
+  "rate_limited",
+  "no_subscription",
+  "busy",
+  "user_denied",
+  "cancelled",
+  "internal"
+ ],
+ "$defs": {
+  "Request": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 2147483647
+    },
+    "method": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 64
+    },
+    "params": {
+     "type": "object"
+    }
+   },
+   "required": [
+    "id",
+    "method"
+   ]
+  },
+  "Error": {
+   "type": "object",
+   "properties": {
+    "code": {
+     "type": "string"
+    },
+    "message": {
+     "type": "string"
+    },
+    "data": {
+     "type": "object"
+    }
+   },
+   "required": [
+    "code",
+    "message"
+   ]
+  },
+  "Response": {
+   "oneOf": [
+    {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "ok": {
+       "const": true
+      },
+      "result": {
+       "type": "object"
+      }
+     },
+     "required": [
+      "id",
+      "ok",
+      "result"
+     ]
+    },
+    {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": [
+        "integer",
+        "null"
+       ]
+      },
+      "ok": {
+       "const": false
+      },
+      "error": {
+       "$ref": "#/$defs/Error"
+      }
+     },
+     "required": [
+      "id",
+      "ok",
+      "error"
+     ]
+    }
+   ]
+  },
+  "Event": {
+   "type": "object",
+   "properties": {
+    "event": {
+     "type": "string",
+     "minLength": 1
+    },
+    "data": {
+     "type": "object"
+    }
+   },
+   "required": [
+    "event",
+    "data"
+   ]
+  },
+  "BlobRef": {
+   "type": "object",
+   "properties": {
+    "blob": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 4294967295
+    },
+    "size": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "mime": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "blob",
+    "size",
+    "mime"
+   ]
+  },
+  "Cursor": {
+   "type": "object",
+   "properties": {
+    "date": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "kind": {
+     "enum": [
+      "sms",
+      "mms"
+     ]
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "date",
+    "kind",
+    "id"
+   ]
+  },
+  "SmsMessage": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "const": "sms"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "thread_id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "address": {
+     "type": "string"
+    },
+    "date": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "date_sent": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "box": {
+     "enum": [
+      "inbox",
+      "sent",
+      "draft",
+      "outbox",
+      "failed",
+      "queued",
+      "other"
+     ]
+    },
+    "read": {
+     "type": "boolean"
+    },
+    "seen": {
+     "type": "boolean"
+    },
+    "status": {
+     "enum": [
+      "none",
+      "complete",
+      "pending",
+      "failed",
+      "other"
+     ]
+    },
+    "body": {
+     "type": "string"
+    },
+    "sub_id": {
+     "type": "integer",
+     "minimum": -1
+    },
+    "locked": {
+     "type": "boolean"
+    },
+    "error_code": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "kind",
+    "id",
+    "thread_id",
+    "address",
+    "date",
+    "box",
+    "read",
+    "body"
+   ]
+  },
+  "MmsPart": {
+   "type": "object",
+   "properties": {
+    "part_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "mime": {
+     "type": "string"
+    },
+    "name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "filename": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "content_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "charset": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "text": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "has_data": {
+     "type": "boolean"
+    },
+    "data": {
+     "$ref": "#/$defs/BlobRef"
+    }
+   },
+   "required": [
+    "part_id",
+    "mime"
+   ]
+  },
+  "MmsMessage": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "const": "mms"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "thread_id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "date": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "date_sent": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "box": {
+     "enum": [
+      "inbox",
+      "sent",
+      "draft",
+      "outbox",
+      "failed",
+      "queued",
+      "other"
+     ]
+    },
+    "read": {
+     "type": "boolean"
+    },
+    "seen": {
+     "type": "boolean"
+    },
+    "subject": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "addresses": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "address": {
+        "type": "string"
+       },
+       "role": {
+        "enum": [
+         "from",
+         "to",
+         "cc",
+         "bcc",
+         "other"
+        ]
+       }
+      },
+      "required": [
+       "address",
+       "role"
+      ]
+     }
+    },
+    "text": {
+     "type": "string"
+    },
+    "attachments": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "part_id": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9223372036854775807
+       },
+       "mime": {
+        "type": "string"
+       },
+       "name": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "part_id",
+       "mime"
+      ]
+     }
+    },
+    "parts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/MmsPart"
+     }
+    },
+    "sub_id": {
+     "type": "integer",
+     "minimum": -1
+    },
+    "locked": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "kind",
+    "id",
+    "thread_id",
+    "date",
+    "box",
+    "read",
+    "addresses",
+    "text",
+    "attachments"
+   ]
+  },
+  "Message": {
+   "oneOf": [
+    {
+     "$ref": "#/$defs/SmsMessage"
+    },
+    {
+     "$ref": "#/$defs/MmsMessage"
+    }
+   ]
+  },
+  "Recipient": {
+   "type": "object",
+   "properties": {
+    "address": {
+     "type": "string"
+    },
+    "contact_id": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 9223372036854775807
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "address",
+    "contact_id",
+    "name"
+   ]
+  },
+  "Thread": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "date": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "message_count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "unread_count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "snippet": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "read": {
+     "type": "boolean"
+    },
+    "has_attachment": {
+     "type": "boolean"
+    },
+    "error": {
+     "type": "boolean"
+    },
+    "archived": {
+     "type": "boolean"
+    },
+    "recipients": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Recipient"
+     }
+    }
+   },
+   "required": [
+    "id",
+    "date",
+    "message_count",
+    "unread_count",
+    "snippet",
+    "read",
+    "recipients"
+   ]
+  },
+  "Contact": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "lookup_key": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "starred": {
+     "type": "boolean"
+    },
+    "has_photo": {
+     "type": "boolean"
+    },
+    "numbers": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "number": {
+        "type": "string"
+       },
+       "normalized": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "number",
+       "type"
+      ]
+     }
+    }
+   },
+   "required": [
+    "id",
+    "name",
+    "has_photo",
+    "numbers"
+   ]
+  },
+  "Subscription": {
+   "type": "object",
+   "properties": {
+    "sub_id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "slot_index": {
+     "type": "integer"
+    },
+    "display_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "carrier_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "country_iso": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "is_default_sms": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "sub_id",
+    "slot_index",
+    "is_default_sms"
+   ]
+  },
+  "Permissions": {
+   "type": "object",
+   "properties": {
+    "READ_SMS": {
+     "type": "boolean"
+    },
+    "SEND_SMS": {
+     "type": "boolean"
+    },
+    "RECEIVE_SMS": {
+     "type": "boolean"
+    },
+    "READ_CONTACTS": {
+     "type": "boolean"
+    },
+    "READ_PHONE_STATE": {
+     "type": "boolean"
+    },
+    "POST_NOTIFICATIONS": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "READ_SMS",
+    "SEND_SMS",
+    "RECEIVE_SMS",
+    "READ_CONTACTS",
+    "READ_PHONE_STATE",
+    "POST_NOTIFICATIONS"
+   ]
+  },
+  "Limits": {
+   "type": "object",
+   "properties": {
+    "max_frame": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_request_json": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_blob_in": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_blobs_pending": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_blob_out": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_in_flight": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_recipients": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_text_chars": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_parts": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "sends_per_minute": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "sends_per_hour": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "max_page": {
+     "type": "integer",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "max_frame",
+    "max_request_json",
+    "max_blob_in",
+    "max_blobs_pending",
+    "max_blob_out",
+    "max_in_flight",
+    "max_recipients",
+    "max_text_chars",
+    "max_parts",
+    "sends_per_minute",
+    "sends_per_hour",
+    "max_page"
+   ]
+  },
+  "hello.params": {
+   "type": "object",
+   "properties": {
+    "protocols": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+     },
+     "minItems": 1,
+     "maxItems": 16
+    },
+    "client": {
+     "type": "string",
+     "maxLength": 64
+    },
+    "client_version": {
+     "type": "string",
+     "maxLength": 64
+    }
+   },
+   "required": [
+    "protocols"
+   ]
+  },
+  "hello.result": {
+   "type": "object",
+   "properties": {
+    "protocol": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "app": {
+     "const": "axross-android-companion"
+    },
+    "app_version": {
+     "type": "string"
+    },
+    "app_version_code": {
+     "type": "integer"
+    },
+    "package": {
+     "type": "string"
+    },
+    "android": {
+     "type": "object",
+     "properties": {
+      "sdk_int": {
+       "type": "integer"
+      },
+      "release": {
+       "type": "string"
+      },
+      "manufacturer": {
+       "type": "string"
+      },
+      "model": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "sdk_int",
+      "release"
+     ]
+    },
+    "capabilities": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "limits": {
+     "$ref": "#/$defs/Limits"
+    },
+    "default_sms_app": {
+     "type": "boolean"
+    },
+    "permissions": {
+     "$ref": "#/$defs/Permissions"
+    }
+   },
+   "required": [
+    "protocol",
+    "app",
+    "app_version",
+    "app_version_code",
+    "package",
+    "android",
+    "capabilities",
+    "limits",
+    "default_sms_app",
+    "permissions"
+   ]
+  },
+  "ping.params": {
+   "type": "object",
+   "properties": {}
+  },
+  "ping.result": {
+   "type": "object",
+   "properties": {
+    "time": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "time"
+   ]
+  },
+  "status.params": {
+   "type": "object",
+   "properties": {}
+  },
+  "status.result": {
+   "type": "object",
+   "properties": {
+    "default_sms_app": {
+     "type": "boolean"
+    },
+    "default_sms_package": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "permissions": {
+     "$ref": "#/$defs/Permissions"
+    },
+    "subscribed": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "sessions": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "default_sms_app",
+    "default_sms_package",
+    "permissions",
+    "subscribed",
+    "sessions"
+   ]
+  },
+  "subscriptions.list.params": {
+   "type": "object",
+   "properties": {}
+  },
+  "subscriptions.list.result": {
+   "type": "object",
+   "properties": {
+    "subscriptions": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Subscription"
+     }
+    },
+    "default_sms_sub_id": {
+     "type": "integer",
+     "minimum": -1
+    }
+   },
+   "required": [
+    "subscriptions",
+    "default_sms_sub_id"
+   ]
+  },
+  "contacts.list.params": {
+   "type": "object",
+   "properties": {
+    "offset": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 10000000
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 1000
+    }
+   }
+  },
+  "contacts.list.result": {
+   "type": "object",
+   "properties": {
+    "contacts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Contact"
+     }
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "next_offset": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "contacts",
+    "total",
+    "next_offset"
+   ]
+  },
+  "contacts.photo.params": {
+   "type": "object",
+   "properties": {
+    "contact_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "size": {
+     "enum": [
+      "thumb",
+      "full"
+     ]
+    }
+   },
+   "required": [
+    "contact_id"
+   ]
+  },
+  "contacts.photo.result": {
+   "type": "object",
+   "properties": {
+    "contact_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "photo": {
+     "$ref": "#/$defs/BlobRef"
+    }
+   },
+   "required": [
+    "contact_id",
+    "photo"
+   ]
+  },
+  "threads.list.params": {
+   "type": "object",
+   "properties": {
+    "offset": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 10000000
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 1000
+    }
+   }
+  },
+  "threads.list.result": {
+   "type": "object",
+   "properties": {
+    "threads": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Thread"
+     }
+    },
+    "next_offset": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "threads",
+    "next_offset"
+   ]
+  },
+  "messages.list.params": {
+   "type": "object",
+   "properties": {
+    "thread_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 500
+    },
+    "before": {
+     "$ref": "#/$defs/Cursor"
+    }
+   },
+   "required": [
+    "thread_id"
+   ]
+  },
+  "messages.list.result": {
+   "type": "object",
+   "properties": {
+    "messages": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Message"
+     }
+    },
+    "next": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Cursor"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "messages",
+    "next"
+   ]
+  },
+  "messages.search.params": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 200
+    },
+    "thread_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 200
+    },
+    "before": {
+     "$ref": "#/$defs/Cursor"
+    }
+   },
+   "required": [
+    "query"
+   ]
+  },
+  "messages.search.result": {
+   "type": "object",
+   "properties": {
+    "messages": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Message"
+     }
+    },
+    "next": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Cursor"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "messages",
+    "next"
+   ]
+  },
+  "message.get.params": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "enum": [
+      "sms",
+      "mms"
+     ]
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "kind",
+    "id"
+   ]
+  },
+  "message.get.result": {
+   "type": "object",
+   "properties": {
+    "message": {
+     "$ref": "#/$defs/Message"
+    }
+   },
+   "required": [
+    "message"
+   ]
+  },
+  "message.mark_read.params": {
+   "allOf": [
+    {
+     "oneOf": [
+      {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "enum": [
+          "sms",
+          "mms"
+         ]
+        },
+        "id": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 9223372036854775807
+        }
+       },
+       "required": [
+        "kind",
+        "id"
+       ],
+       "not": {
+        "required": [
+         "thread_id"
+        ]
+       }
+      },
+      {
+       "type": "object",
+       "properties": {
+        "thread_id": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 9223372036854775807
+        }
+       },
+       "required": [
+        "thread_id"
+       ],
+       "not": {
+        "anyOf": [
+         {
+          "required": [
+           "kind"
+          ]
+         },
+         {
+          "required": [
+           "id"
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "type": "object",
+     "properties": {
+      "read": {
+       "type": "boolean"
+      }
+     }
+    }
+   ]
+  },
+  "message.mark_read.result": {
+   "type": "object",
+   "properties": {
+    "updated": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "updated"
+   ]
+  },
+  "message.delete.params": {
+   "oneOf": [
+    {
+     "type": "object",
+     "properties": {
+      "kind": {
+       "enum": [
+        "sms",
+        "mms"
+       ]
+      },
+      "id": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 9223372036854775807
+      }
+     },
+     "required": [
+      "kind",
+      "id"
+     ],
+     "not": {
+      "required": [
+       "thread_id"
+      ]
+     }
+    },
+    {
+     "type": "object",
+     "properties": {
+      "thread_id": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 9223372036854775807
+      }
+     },
+     "required": [
+      "thread_id"
+     ],
+     "not": {
+      "anyOf": [
+       {
+        "required": [
+         "kind"
+        ]
+       },
+       {
+        "required": [
+         "id"
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "message.delete.result": {
+   "type": "object",
+   "properties": {
+    "deleted": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "deleted"
+   ]
+  },
+  "sms.send.params": {
+   "type": "object",
+   "properties": {
+    "recipients": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+     },
+     "minItems": 1,
+     "maxItems": 10
+    },
+    "text": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 5000
+    },
+    "sub_id": {
+     "type": "integer",
+     "minimum": -1,
+     "maximum": 2147483647
+    },
+    "delivery_report": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "recipients",
+    "text"
+   ]
+  },
+  "sms.send.result": {
+   "type": "object",
+   "properties": {
+    "send_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "recipients": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "index": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "address": {
+        "type": "string"
+       },
+       "parts": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 30
+       }
+      },
+      "required": [
+       "index",
+       "address",
+       "parts"
+      ]
+     }
+    }
+   },
+   "required": [
+    "send_id",
+    "recipients"
+   ]
+  },
+  "sms.status.params": {
+   "type": "object",
+   "properties": {
+    "send_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "send_id"
+   ]
+  },
+  "sms.status.result": {
+   "type": "object",
+   "properties": {
+    "send_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "recipients": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "index": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "address": {
+        "type": "string"
+       },
+       "state": {
+        "enum": [
+         "sending",
+         "sent",
+         "failed",
+         "delivered",
+         "delivery_failed"
+        ]
+       },
+       "reason": {
+        "anyOf": [
+         {
+          "enum": [
+           "generic_failure",
+           "radio_off",
+           "null_pdu",
+           "no_service",
+           "limit_exceeded",
+           "fdn_check_failure",
+           "short_code_not_allowed",
+           "short_code_never_allowed",
+           "other"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "index",
+       "address",
+       "state",
+       "reason"
+      ]
+     }
+    }
+   },
+   "required": [
+    "send_id",
+    "recipients"
+   ]
+  },
+  "mms.parts.params": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "id"
+   ]
+  },
+  "mms.parts.result": {
+   "type": "object",
+   "properties": {
+    "message_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "parts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/MmsPart"
+     }
+    }
+   },
+   "required": [
+    "message_id",
+    "parts"
+   ]
+  },
+  "mms.part_data.params": {
+   "type": "object",
+   "properties": {
+    "part_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "part_id"
+   ]
+  },
+  "mms.part_data.result": {
+   "type": "object",
+   "properties": {
+    "part_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "data": {
+     "$ref": "#/$defs/BlobRef"
+    }
+   },
+   "required": [
+    "part_id",
+    "data"
+   ]
+  },
+  "subscribe.params": {
+   "type": "object",
+   "properties": {
+    "events": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "message.received",
+       "messages.changed"
+      ]
+     },
+     "minItems": 1,
+     "maxItems": 16
+    }
+   },
+   "required": [
+    "events"
+   ]
+  },
+  "subscribe.result": {
+   "type": "object",
+   "properties": {
+    "events": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "events"
+   ]
+  },
+  "unsubscribe.params": {
+   "type": "object",
+   "properties": {
+    "events": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "message.received",
+       "messages.changed"
+      ]
+     },
+     "maxItems": 16
+    }
+   }
+  },
+  "unsubscribe.result": {
+   "type": "object",
+   "properties": {
+    "events": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "events"
+   ]
+  },
+  "backup.export.params": {
+   "type": "object",
+   "properties": {
+    "thread_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "include_mms": {
+     "type": "boolean"
+    },
+    "include_mms_data": {
+     "type": "boolean"
+    }
+   }
+  },
+  "backup.export.result": {
+   "type": "object",
+   "properties": {
+    "export_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "sms_count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "mms_count": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "export_id",
+    "sms_count",
+    "mms_count"
+   ]
+  },
+  "backup.cancel.params": {
+   "type": "object",
+   "properties": {
+    "export_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "export_id"
+   ]
+  },
+  "backup.cancel.result": {
+   "type": "object",
+   "properties": {}
+  },
+  "backup.restore.begin.params": {
+   "type": "object",
+   "properties": {
+    "sms_count": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 1000000
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 100
+    }
+   },
+   "required": [
+    "sms_count"
+   ]
+  },
+  "backup.restore.begin.result": {
+   "type": "object",
+   "properties": {
+    "restore_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "state": {
+     "const": "waiting_for_user"
+    }
+   },
+   "required": [
+    "restore_id",
+    "state"
+   ]
+  },
+  "backup.restore.chunk.params": {
+   "type": "object",
+   "properties": {
+    "restore_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object"
+     },
+     "minItems": 1,
+     "maxItems": 500
+    }
+   },
+   "required": [
+    "restore_id",
+    "items"
+   ]
+  },
+  "backup.restore.chunk.result": {
+   "type": "object",
+   "properties": {
+    "inserted": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "skipped": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "rejected": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "inserted",
+    "skipped",
+    "rejected"
+   ]
+  },
+  "backup.restore.end.params": {
+   "type": "object",
+   "properties": {
+    "restore_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    }
+   },
+   "required": [
+    "restore_id"
+   ]
+  },
+  "backup.restore.end.result": {
+   "type": "object",
+   "properties": {
+    "inserted": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "skipped": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "rejected": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "previous_default_sms_package": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "inserted",
+    "skipped",
+    "rejected",
+    "previous_default_sms_package"
+   ]
+  },
+  "event.message.received": {
+   "type": "object",
+   "properties": {
+    "message": {
+     "$ref": "#/$defs/Message"
+    }
+   },
+   "required": [
+    "message"
+   ]
+  },
+  "event.messages.changed": {
+   "type": "object",
+   "properties": {}
+  },
+  "event.sms.sent": {
+   "type": "object",
+   "properties": {
+    "send_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "index": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "address": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "send_id",
+    "index",
+    "address"
+   ]
+  },
+  "event.sms.failed": {
+   "type": "object",
+   "properties": {
+    "send_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "index": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "address": {
+     "type": "string"
+    },
+    "reason": {
+     "enum": [
+      "generic_failure",
+      "radio_off",
+      "null_pdu",
+      "no_service",
+      "limit_exceeded",
+      "fdn_check_failure",
+      "short_code_not_allowed",
+      "short_code_never_allowed",
+      "other"
+     ]
+    },
+    "result_code": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "send_id",
+    "index",
+    "address",
+    "reason",
+    "result_code"
+   ]
+  },
+  "event.sms.delivered": {
+   "type": "object",
+   "properties": {
+    "send_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "index": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "address": {
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "complete",
+      "pending",
+      "failed"
+     ]
+    }
+   },
+   "required": [
+    "send_id",
+    "index",
+    "address",
+    "status"
+   ]
+  },
+  "event.backup.items": {
+   "type": "object",
+   "properties": {
+    "export_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "seq": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Message"
+     }
+    }
+   },
+   "required": [
+    "export_id",
+    "seq",
+    "items"
+   ]
+  },
+  "event.backup.done": {
+   "type": "object",
+   "properties": {
+    "export_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "sms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "mms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "blobs": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "export_id",
+    "sms",
+    "mms",
+    "blobs"
+   ]
+  },
+  "event.backup.failed": {
+   "type": "object",
+   "properties": {
+    "export_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "code": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "export_id",
+    "code"
+   ]
+  },
+  "event.backup.restore.state": {
+   "type": "object",
+   "properties": {
+    "restore_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9223372036854775807
+    },
+    "state": {
+     "enum": [
+      "approved",
+      "denied",
+      "not_default_sms_app",
+      "expired"
+     ]
+    }
+   },
+   "required": [
+    "restore_id",
+    "state"
+   ]
+  },
+  "event.session.closing": {
+   "type": "object",
+   "properties": {
+    "reason": {
+     "enum": [
+      "service_stopping",
+      "fgs_timeout",
+      "protocol_error",
+      "slow_reader",
+      "too_many_sessions",
+      "handshake_timeout"
+     ]
+    }
+   },
+   "required": [
+    "reason"
+   ]
+  }
+ }
+}

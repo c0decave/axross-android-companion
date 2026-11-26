@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">axross companion</string>
+    <string name="about">This app lets axross, the file manager on your computer, read your SMS, MMS and contacts and send SMS - over USB, through ADB, when you connect the phone and allow USB debugging.\n\nOnly a computer connected by ADB can talk to it; other apps on this phone cannot. It has no internet access. Every message it sends is one you wrote and sent in axross.</string>
+    <string name="privacy">This app keeps no data of its own, and nothing is logged of your messages, numbers or contacts. Source and licence: github.com/c0decave/axross-android-companion (Apache-2.0).</string>
+    <string name="grant">Grant permissions</string>
+    <string name="app_settings">App settings</string>
+    <string name="listen">Start listening for axross</string>
+    <string name="close">Close</string>
+    <string name="state_default">This app is the default SMS app (make your own messaging app the default again when a restore is done).</string>
+    <string name="state_not_default">Another app is the default SMS app (normal). Deleting, marking read and restoring need this app to be the default for a while.</string>
+    <string name="state_stopped">Not listening (axross starts it when it connects).</string>
+    <string name="state_listening">Listening; no computer connected.</string>
+    <plurals name="state_sessions">
+        <item quantity="one">%1$d computer connected.</item>
+        <item quantity="other">%1$d connections.</item>
+    </plurals>
+    <string name="state_version">Version %1$s, protocol %2$d</string>
+
+    <string name="channel_connection">Connection to axross</string>
+    <string name="channel_ask">Questions from axross</string>
+    <string name="note_connected">axross is connected</string>
+    <string name="note_waiting">Waiting for axross</string>
+    <string name="note_waiting_text">Listening for axross over USB (ADB)</string>
+    <plurals name="note_sessions">
+        <item quantity="one">%2$s, %1$d connection</item>
+        <item quantity="other">%2$s, %1$d connections</item>
+    </plurals>
+    <string name="note_restore_title">axross wants to restore messages</string>
+    <plurals name="note_restore_text">
+        <item quantity="one">%1$d message from a backup - tap to answer</item>
+        <item quantity="other">%1$d messages from a backup - tap to answer</item>
+    </plurals>
+    <string name="note_default_title">Make your messaging app the default again</string>
+    <string name="note_default_after_restore">The restore is done. Tap to choose your own messaging app as the default SMS app again.</string>
+    <string name="note_default_sms_arrived">A new SMS arrived and was stored while axross companion is the default SMS app. Tap to make your own messaging app the default again.</string>
+    <string name="note_default_mms_arrived">An MMS arrived while axross companion is the default SMS app; it cannot download MMS. Make your own messaging app the default again to receive it (tap).</string>
+
+    <plurals name="restore_question">
+        <item quantity="one">axross wants to restore %1$d message from %2$s to this phone.</item>
+        <item quantity="other">axross wants to restore %1$d messages from %2$s to this phone.</item>
+    </plurals>
+    <string name="restore_unknown_source">a backup</string>
+    <string name="restore_note_default">Messages already on the phone are not touched; ones that are there already are skipped.</string>
+    <string name="restore_note_not_default">Android lets only the default SMS app write messages: after \"Restore\" Android asks you to make axross companion the default SMS app. When the restore is done, make your own messaging app the default again (a notification reminds you). While the companion is the default, new SMS are stored, but MMS cannot be downloaded.</string>
+    <string name="restore_ok">Restore</string>
+    <string name="restore_cancel">Cancel</string>
+    <string name="restore_none">There is no restore waiting for an answer (it may have expired or been answered).</string>
+
+    <string name="compose_refused">axross companion does not write messages for other apps. Write in axross on your computer, or make your own messaging app the default SMS app again.</string>
+</resources>
